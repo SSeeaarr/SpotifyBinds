@@ -1,0 +1,2 @@
+# SpotifyBinds
+Spotify terminal binds
