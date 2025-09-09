@@ -53,7 +53,7 @@ async fn main() {
     let mut input = String::new();
     let coreloop: bool = true;
     while coreloop {
-        io::stdin().read_line(&mut input);
+        let _ = io::stdin().read_line(&mut input);
         match input.trim() {
             "next" => {
                 SpotifyClient {
@@ -62,7 +62,7 @@ async fn main() {
                 .next_track(None)
                 .await
                 .unwrap();
-                println!("Skipped to next track");
+                println!("Skipped to next track");car
             }
 
             "previous" => {
