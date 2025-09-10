@@ -62,7 +62,7 @@ async fn main() {
                 .next_track(None)
                 .await
                 .unwrap();
-                println!("Skipped to next track");car
+                println!("Skipped to next track");
             }
 
             "previous" => {
