@@ -55,7 +55,7 @@ async fn main() {
     
 
     // Running the requests
-//
+
     let mut input = String::new();
     let coreloop: bool = true;
     while coreloop {
@@ -68,7 +68,7 @@ async fn main() {
                 .next_track(None)
                 .await
                 .unwrap();
-                println!("Skipped to next track");car
+                println!("Skipped to next track");
             }
 
             "previous" => {
