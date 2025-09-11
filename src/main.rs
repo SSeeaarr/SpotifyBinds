@@ -5,10 +5,12 @@ use rspotify::{
     scopes,
 };
 use std::io;
+include!("hotkeyreg.rs");
 
 #[tokio::main]
 async fn main() {
     // You can use any logger for debugging.
+    listenforkey().await;
     env_logger::init();
 
     // Set RSPOTIFY_CLIENT_ID and RS POTIFY_CLIENT_SECRET in an .env file (after
@@ -45,8 +47,12 @@ async fn main() {
 
     // Obtaining the access token
     let url = spotify.get_authorize_url(false).unwrap();
+    
     // This function requires the `cli` feature enabled.
+    
     spotify.prompt_for_token(&url).await.unwrap();
+    
+    
 
     // Running the requests
 //
