@@ -1,10 +1,9 @@
 use rspotify::{
-    AuthCodeSpotify, ClientResult, Credentials, OAuth,
-    model::{AdditionalType, Country, Market},
-    prelude::*,
-    scopes,
+    model::{AdditionalType, Country, FullTrack, Market, PlayableItem}, prelude::*, scopes, AuthCodeSpotify, ClientResult, Credentials, OAuth
 };
+use serde_json::value::Index;
 use std::io;
+
 include!("hotkeyreg.rs");
 
 #[tokio::main]
@@ -39,7 +38,8 @@ async fn main() {
     // ```
     let oauth = OAuth::from_env(scopes!(
         "user-read-currently-playing",
-        "user-modify-playback-state"
+        "user-modify-playback-state",
+        "user-read-playback-state"
     ))
     .unwrap();
 
@@ -90,8 +90,26 @@ async fn main() {
                 .unwrap();
             }
 
+            "current" => {
+                SpotifyClient {
+                    spotify: spotify.clone(),
+                }
+                .current_song()
+                .await
+                .unwrap();
+            }
+
             "exit" => {
                 break;
+            }
+
+            "current queue" => {
+                SpotifyClient {
+                    spotify: spotify.clone(),
+                }
+                .current_queue()
+                .await
+                .unwrap();
             }
 
             _ => {
@@ -107,6 +125,8 @@ struct SpotifyClient {
     spotify: AuthCodeSpotify,
 }
 
+
+
 impl SpotifyClient {
     async fn next_track(&self, device_id: Option<&str>) -> ClientResult<()> {
         self.spotify.next_track(device_id).await?;
@@ -119,7 +139,7 @@ impl SpotifyClient {
     }
 
     async fn song_info(&self, device_id: Option<&str>) -> ClientResult<()> {
-        let market = Market::Country(Country::Spain);
+        let market = Market::Country(Country::UnitedStates);
         let additional_types = [AdditionalType::Episode];
         let artists = self
             .spotify
@@ -129,4 +149,36 @@ impl SpotifyClient {
         println!("Response: {artists:?}");
         Ok(())
     }
+    
+    async fn current_queue(&self) -> ClientResult<()> {
+        match self.spotify.current_user_queue().await {
+        Ok(res) => {
+            for song in &res.queue{
+                if let PlayableItem::Track(track) = song{
+                    
+                    println!("{:#?} -- {:#?}", track.name, track.artists);
+                }
+            }
+            
+            Ok(())
+        },
+        Err(e) => {
+            println!("Error fetching queue: {:?}", e);
+            Err(e)
+        }
+        }
+    }
+
+    async fn current_song(&self) -> ClientResult<()> {
+        let song = self.spotify.current_playing(None, None::<Vec<_>>).await?.unwrap();
+            if let Some(PlayableItem::Track(track)) = song.item {
+                println!("{:?}", track.name)
+            }
+        Ok(())
+    }
 }
+
+
+
+    
+
