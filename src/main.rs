@@ -1,8 +1,10 @@
 use rspotify::{
-    model::{AdditionalType, Country, FullTrack, Market, PlayableItem}, prelude::*, scopes, AuthCodeSpotify, ClientResult, Credentials, Config, OAuth
+    AuthCodeSpotify, ClientError, ClientResult, Config, Credentials, OAuth,
+    model::{AdditionalType, Country, FullTrack, Market, PlayableItem},
+    prelude::*,
+    scopes,
 };
-use std::{io};
-
+use std::io;
 
 include!("hotkeyreg.rs");
 include!("savetoken.rs");
@@ -28,10 +30,10 @@ async fn main() {
     // ```
     //let creds = Credentials::from_env().unwrap();
     let token = Token::from_json().unwrap();
-        let client_id = &token.RSPOTIFY_CLIENT_ID;
-        let client_secret = &token.RSPOTIFY_CLIENT_SECRET;
-        let redirect_uri = &token.RSPOTIFY_REDIRECT_URI;
-    
+    let client_id = &token.RSPOTIFY_CLIENT_ID;
+    let client_secret = &token.RSPOTIFY_CLIENT_SECRET;
+    let redirect_uri = &token.RSPOTIFY_REDIRECT_URI;
+
     let creds = Credentials::new(&client_id, &client_secret);
 
     // Same for RSPOTIFY_REDIRECT_URI. You can also set it explictly:
@@ -43,8 +45,7 @@ async fn main() {
     //     ..Default::default(),
     // };
     // ```
-    let oauth = OAuth::from_env(
-        scopes!(
+    let oauth = OAuth::from_env(scopes!(
         "user-read-currently-playing",
         "user-modify-playback-state",
         "user-read-playback-state"
@@ -59,16 +60,13 @@ async fn main() {
     };
 
     let spotify = AuthCodeSpotify::with_config(creds, oauth, config);
-    
 
     // Obtaining the access token
     let url = spotify.get_authorize_url(false).unwrap();
-    
+
     // This function requires the `cli` feature enabled.
-    
+
     spotify.prompt_for_token(&url).await.unwrap();
-    
-    
 
     // Running the requests
 
@@ -117,7 +115,7 @@ async fn main() {
             }
 
             "play" => {
-                SpotifyClient{
+                SpotifyClient {
                     spotify: spotify.clone(),
                 }
                 .play(None)
@@ -126,10 +124,19 @@ async fn main() {
             }
 
             "pause" => {
-                SpotifyClient{
+                SpotifyClient {
                     spotify: spotify.clone(),
                 }
                 .pause(None)
+                .await
+                .unwrap();
+            }
+
+            "toggle" => {
+                SpotifyClient {
+                    spotify: spotify.clone(),
+                }
+                .toggle_playback(None)
                 .await
                 .unwrap();
             }
@@ -156,24 +163,44 @@ async fn main() {
     }
 }
 
+
 struct SpotifyClient {
     spotify: AuthCodeSpotify,
-    
 }
-
-
 
 impl SpotifyClient {
     async fn pause(&self, device_id: Option<&str>) -> ClientResult<()> {
-        self.spotify.pause_playback(device_id).await?;
+        if let Err(e) = self.spotify.pause_playback(device_id).await {
+            println!("Already paused! : {}", e);
+            return Ok(());
+        }
         Ok(())
     }
 
     async fn play(&self, device_id: Option<&str>) -> ClientResult<()> {
-        self.spotify.resume_playback(device_id, None).await?;
+        if let Err(e) = self.spotify.resume_playback(device_id, None).await {
+            println!("Already playing! : {}", e);
+            return Ok(());
+        }
         Ok(())
     }
 
+    async fn toggle_playback(&self, device_id: Option<&str>) -> ClientResult<()> {
+        let playback = self.spotify.current_playback(None, None::<Vec<_>>).await?;
+
+        if let Some(context) = playback {
+            if context.is_playing {
+                self.spotify.pause_playback(device_id).await?;
+            } else {
+                self.spotify.resume_playback(device_id, None).await?;
+            }
+        } else {
+            println!("No active playback");
+        }
+
+        Ok(())
+    }
+        
 
     async fn next_track(&self, device_id: Option<&str>) -> ClientResult<()> {
         self.spotify.next_track(device_id).await?;
@@ -196,48 +223,51 @@ impl SpotifyClient {
         println!("Response: {artists:?}");
         Ok(())
     }
-    
+
     async fn current_queue(&self) -> ClientResult<()> {
         match self.spotify.current_user_queue().await {
-        Ok(res) => {
-            for song in &res.queue{
-                if let PlayableItem::Track(track) = song{
-                    
-                    let artist_names: Vec<&str> = track.artists
-                        .iter()
-                        .map(|artist| artist.name.as_str())
-                        .collect();
+            Ok(res) => {
+                for song in &res.queue {
+                    if let PlayableItem::Track(track) = song {
+                        let artist_names: Vec<&str> = track
+                            .artists
+                            .iter()
+                            .map(|artist| artist.name.as_str())
+                            .collect();
 
-                    println!("{:#?} -- {:#?}", track.name, artist_names);
+                        println!("{:#?} -- {:#?}", track.name, artist_names);
+                    }
                 }
+                if res.queue.is_empty() {
+                    println!("Queue is empty")
+                }
+
+                Ok(())
             }
-            if res.queue.is_empty() {
-                println!("Queue is empty")
+            Err(e) => {
+                println!("Error fetching queue: {:?}", e);
+                Err(e)
             }
-            
-            Ok(())
-        },
-        Err(e) => {
-            println!("Error fetching queue: {:?}", e);
-            Err(e)
-        }
         }
     }
 
     async fn current_song(&self) -> ClientResult<()> {
-        let song = self.spotify.current_playing(None, None::<Vec<_>>).await?.unwrap();
-            if let Some(PlayableItem::Track(track)) = song.item {
-                let artist_names: Vec<&str> = track.artists
-                        .iter()
-                        .map(|artist| artist.name.as_str())
-                        .collect();
-                println!("Song: {:?} on album: {:?} Artist: {:?}", track.name, track.album.name, artist_names)
-            }
+        let song = self
+            .spotify
+            .current_playing(None, None::<Vec<_>>)
+            .await?
+            .unwrap();
+        if let Some(PlayableItem::Track(track)) = song.item {
+            let artist_names: Vec<&str> = track
+                .artists
+                .iter()
+                .map(|artist| artist.name.as_str())
+                .collect();
+            println!(
+                "Song: {:?} on album: {:?} Artist: {:?}",
+                track.name, track.album.name, artist_names
+            )
+        }
         Ok(())
     }
 }
-
-
-
-    
-
