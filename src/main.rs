@@ -1,10 +1,11 @@
 use rspotify::{
-    model::{AdditionalType, Country, FullTrack, Market, PlayableItem}, prelude::*, scopes, AuthCodeSpotify, ClientResult, Credentials, OAuth
+    model::{AdditionalType, Country, FullTrack, Market, PlayableItem}, prelude::*, scopes, AuthCodeSpotify, ClientResult, Credentials, Config, OAuth
 };
-use serde_json::value::Index;
-use std::io;
+use std::{io};
+
 
 include!("hotkeyreg.rs");
+include!("savetoken.rs");
 
 #[tokio::main]
 async fn main() {
@@ -25,7 +26,13 @@ async fn main() {
     // ```
     // let creds = Credentials::new("my-client-id", "my-client-secret");
     // ```
-    let creds = Credentials::from_env().unwrap();
+    //let creds = Credentials::from_env().unwrap();
+    let token = Token::from_json().unwrap();
+        let client_id = &token.RSPOTIFY_CLIENT_ID;
+        let client_secret = &token.RSPOTIFY_CLIENT_SECRET;
+        let redirect_uri = &token.RSPOTIFY_REDIRECT_URI;
+    
+    let creds = Credentials::new(&client_id, &client_secret);
 
     // Same for RSPOTIFY_REDIRECT_URI. You can also set it explictly:
     //
@@ -36,14 +43,23 @@ async fn main() {
     //     ..Default::default(),
     // };
     // ```
-    let oauth = OAuth::from_env(scopes!(
+    let oauth = OAuth::from_env(
+        scopes!(
         "user-read-currently-playing",
         "user-modify-playback-state",
         "user-read-playback-state"
     ))
     .unwrap();
 
-    let spotify = AuthCodeSpotify::new(creds, oauth);
+    let config = Config {
+        token_cached: true,
+        token_refreshing: true,
+        cache_path: std::path::PathBuf::from(".spotify_token_cache.json"),
+        ..Default::default()
+    };
+
+    let spotify = AuthCodeSpotify::with_config(creds, oauth, config);
+    
 
     // Obtaining the access token
     let url = spotify.get_authorize_url(false).unwrap();
@@ -58,6 +74,7 @@ async fn main() {
 
     let mut input = String::new();
     let coreloop: bool = true;
+    println!("listening for input...");
     while coreloop {
         let _ = io::stdin().read_line(&mut input);
         match input.trim() {
@@ -99,6 +116,24 @@ async fn main() {
                 .unwrap();
             }
 
+            "play" => {
+                SpotifyClient{
+                    spotify: spotify.clone(),
+                }
+                .play(None)
+                .await
+                .unwrap();
+            }
+
+            "pause" => {
+                SpotifyClient{
+                    spotify: spotify.clone(),
+                }
+                .pause(None)
+                .await
+                .unwrap();
+            }
+
             "exit" => {
                 break;
             }
@@ -123,11 +158,23 @@ async fn main() {
 
 struct SpotifyClient {
     spotify: AuthCodeSpotify,
+    
 }
 
 
 
 impl SpotifyClient {
+    async fn pause(&self, device_id: Option<&str>) -> ClientResult<()> {
+        self.spotify.pause_playback(device_id).await?;
+        Ok(())
+    }
+
+    async fn play(&self, device_id: Option<&str>) -> ClientResult<()> {
+        self.spotify.resume_playback(device_id, None).await?;
+        Ok(())
+    }
+
+
     async fn next_track(&self, device_id: Option<&str>) -> ClientResult<()> {
         self.spotify.next_track(device_id).await?;
         Ok(())
@@ -156,8 +203,16 @@ impl SpotifyClient {
             for song in &res.queue{
                 if let PlayableItem::Track(track) = song{
                     
-                    println!("{:#?} -- {:#?}", track.name, track.artists);
+                    let artist_names: Vec<&str> = track.artists
+                        .iter()
+                        .map(|artist| artist.name.as_str())
+                        .collect();
+
+                    println!("{:#?} -- {:#?}", track.name, artist_names);
                 }
+            }
+            if res.queue.is_empty() {
+                println!("Queue is empty")
             }
             
             Ok(())
@@ -172,7 +227,11 @@ impl SpotifyClient {
     async fn current_song(&self) -> ClientResult<()> {
         let song = self.spotify.current_playing(None, None::<Vec<_>>).await?.unwrap();
             if let Some(PlayableItem::Track(track)) = song.item {
-                println!("{:?}", track.name)
+                let artist_names: Vec<&str> = track.artists
+                        .iter()
+                        .map(|artist| artist.name.as_str())
+                        .collect();
+                println!("Song: {:?} on album: {:?} Artist: {:?}", track.name, track.album.name, artist_names)
             }
         Ok(())
     }
