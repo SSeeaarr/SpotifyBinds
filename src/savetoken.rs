@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
-use std::{default, fs};
+use std::{error::Error, fs};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Token{
@@ -11,7 +11,7 @@ struct Token{
 
 impl Token{
     
-    pub fn from_json() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_json() -> Result<Self, Box<dyn Error>> {
 
         let _content = match fs::read_to_string("token.json") {
         Ok(content) => content,
