@@ -1,20 +1,16 @@
 use rspotify::{
     AuthCodeSpotify, ClientError, ClientResult, Config, Credentials, OAuth,
-    model::{AdditionalType, Country, FullTrack, Market, PlayableItem},
+    model::{AdditionalType, Country, FullTrack, Market, PlayableItem, track},
     prelude::*,
     scopes,
 };
 use std::io;
 
+include!("UI.rs");
 include!("hotkeyreg.rs");
 include!("savetoken.rs");
 
-#[tokio::main]
-async fn main() {
-    // You can use any logger for debugging.
-    listenforkey().await;
-    env_logger::init();
-
+async fn control() -> AuthCodeSpotify {
     // Set RSPOTIFY_CLIENT_ID and RS POTIFY_CLIENT_SECRET in an .env file (after
     // enabling the `env-file` feature) or export them manually:
     //
@@ -29,6 +25,7 @@ async fn main() {
     // let creds = Credentials::new("my-client-id", "my-client-secret");
     // ```
     //let creds = Credentials::from_env().unwrap();
+
     let token = Token::from_json().unwrap();
     let client_id = &token.RSPOTIFY_CLIENT_ID;
     let client_secret = &token.RSPOTIFY_CLIENT_SECRET;
@@ -68,7 +65,10 @@ async fn main() {
 
     spotify.prompt_for_token(&url).await.unwrap();
 
+    spotify.clone()
+
     // Running the requests
+    /*
 
     let mut input = String::new();
     let coreloop: bool = true;
@@ -161,8 +161,8 @@ async fn main() {
 
         input.clear();
     }
+    */
 }
-
 
 struct SpotifyClient {
     spotify: AuthCodeSpotify,
@@ -200,7 +200,6 @@ impl SpotifyClient {
 
         Ok(())
     }
-        
 
     async fn next_track(&self, device_id: Option<&str>) -> ClientResult<()> {
         self.spotify.next_track(device_id).await?;

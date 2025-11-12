@@ -8,7 +8,7 @@ struct Token{
     RSPOTIFY_CLIENT_SECRET: String,
     RSPOTIFY_REDIRECT_URI: String,
 }
-
+ 
 impl Token{
     
     pub fn from_json() -> Result<Self, Box<dyn Error>> {
@@ -17,10 +17,11 @@ impl Token{
         Ok(content) => content,
         Err(_) => {
             // File doesn't exist, create with default values
+            let default_app = crate::Appinfo::default();
             let default_token = Token {
-                RSPOTIFY_CLIENT_ID: String::new(),
-                RSPOTIFY_CLIENT_SECRET: String::new(),
-                RSPOTIFY_REDIRECT_URI: String::new(),
+                RSPOTIFY_CLIENT_ID: default_app.clientId.clone(),
+                RSPOTIFY_CLIENT_SECRET: default_app.clientSecret.clone(),
+                RSPOTIFY_REDIRECT_URI: default_app.redirectUri.clone(),
             };
             
             let json = serde_json::to_string_pretty(&default_token)?;
@@ -35,3 +36,4 @@ impl Token{
     }
 
 }
+    
