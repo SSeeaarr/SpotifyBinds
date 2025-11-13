@@ -2,3 +2,5 @@
 .env
 token.json
 .spotify_token_cache.json
+.spotify_binds.json
+.spotify_settings.json
