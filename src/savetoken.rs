@@ -1,15 +1,17 @@
+use rspotify::Token;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::{error::Error, fs};
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Token{
+struct MyToken{
     RSPOTIFY_CLIENT_ID: String,
     RSPOTIFY_CLIENT_SECRET: String,
     RSPOTIFY_REDIRECT_URI: String,
 }
  
-impl Token{
+impl MyToken{
+
     
     pub fn from_json() -> Result<Self, Box<dyn Error>> {
 
@@ -18,7 +20,7 @@ impl Token{
         Err(_) => {
             // File doesn't exist, create with default values
             let default_app = crate::Appinfo::default();
-            let default_token = Token {
+            let default_token = MyToken {
                 RSPOTIFY_CLIENT_ID: default_app.clientId.clone(),
                 RSPOTIFY_CLIENT_SECRET: default_app.clientSecret.clone(),
                 RSPOTIFY_REDIRECT_URI: default_app.redirectUri.clone(),
@@ -31,8 +33,14 @@ impl Token{
     };
     
         let content = fs::read_to_string("token.json")?;
-        let token: Token = from_str(&content)?;
+        let token: MyToken = from_str(&content)?;
         Ok(token)
+    }
+
+    pub fn save_to_json(&self) -> Result<(), Box<dyn Error>> {
+        let json = serde_json::to_string_pretty(&self)?;
+        fs::write("token.json", json)?;
+        Ok(())
     }
 
 }

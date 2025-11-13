@@ -7,10 +7,9 @@ use rspotify::{
 use std::io;
 
 include!("UI.rs");
-include!("hotkeyreg.rs");
 include!("savetoken.rs");
 
-async fn control() -> AuthCodeSpotify {
+async fn spotifyinit() -> AuthCodeSpotify {
     // Set RSPOTIFY_CLIENT_ID and RS POTIFY_CLIENT_SECRET in an .env file (after
     // enabling the `env-file` feature) or export them manually:
     //
@@ -18,7 +17,7 @@ async fn control() -> AuthCodeSpotify {
     // export RSPOTIFY_CLIENT_SECRET="secret"
     //
     // These will then be read with `from_env`.
-    //
+    // 
     // Otherwise, set client_id and client_secret explictly:
     //
     // ```
@@ -26,7 +25,7 @@ async fn control() -> AuthCodeSpotify {
     // ```
     //let creds = Credentials::from_env().unwrap();
 
-    let token = Token::from_json().unwrap();
+    let token = MyToken::from_json().unwrap();
     let client_id = &token.RSPOTIFY_CLIENT_ID;
     let client_secret = &token.RSPOTIFY_CLIENT_SECRET;
     let redirect_uri = &token.RSPOTIFY_REDIRECT_URI;

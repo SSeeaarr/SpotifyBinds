@@ -1,56 +1,180 @@
 use rdev::{listen, Event, EventType, Key};
-use tokio::sync::mpsc;
-use std::sync::mpsc::channel;
-use std::thread;
+use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
+use tokio::sync::mpsc::UnboundedSender;
 
-pub async fn listenforkey(spotify: AuthCodeSpotify) {
-    todo!()
+// Track which modifier keys are currently pressed
+thread_local! {
+    static MODIFIERS: Arc<Mutex<HashSet<Key>>> = Arc::new(Mutex::new(HashSet::new()));
+}
 
+// Simple enum to describe key events sent from the listener to the UI
+#[derive(Debug, Clone)]
+pub enum KeyEvent {
+    Toggle,
+    Play,
+    Pause,
+    Next,
+    Previous,
+}
+
+fn capture_key_input(ctx: &egui::Context) -> Option<String> {
     
+    for event in &ctx.input(|i| i.events.clone()) {
+        if let egui::Event::Key { key, pressed: true, .. } = event {
+            let modifiers = ctx.input(|i| i.modifiers);
+            
+            
+            let mut combo = String::new();
+            
+            if modifiers.ctrl {
+                combo.push_str("Ctrl+");
+            }
+            if modifiers.shift {
+                combo.push_str("Shift+");
+            }
+            if modifiers.alt {
+                combo.push_str("Alt+");
+            }
+            
+            // for egui key events (capture), use debug name like "A" or "Enter"
+            combo.push_str(&format!("{:?}", key));
+            
+            return Some(combo);
+        }
+    }
+    None
 }
 
-fn record_key() -> String {
+pub fn listenforkey_send(
+    tx: UnboundedSender<KeyEvent>,
+    toggle_key_str: String,
+    play_key_str: String,
+    pause_key_str: String,
+    next_key_str: String,
+    previous_key_str: String,
+) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    
+    // Parse the keybinds using str_to_key
+    let toggle_key = str_to_key(&toggle_key_str);
+    let play_key = str_to_key(&play_key_str);
+    let pause_key = str_to_key(&pause_key_str);
+    let next_key = str_to_key(&next_key_str);
+    let previous_key = str_to_key(&previous_key_str);
 
-    let (tx, rx) = channel();
+    // Debug: print parsed binds
+    eprintln!("[LISTENER] Parsed binds:");
+    eprintln!("  Toggle: {} -> {:?}", toggle_key_str, toggle_key);
+    eprintln!("  Play: {} -> {:?}", play_key_str, play_key);
+    eprintln!("  Pause: {} -> {:?}", pause_key_str, pause_key);
+    eprintln!("  Next: {} -> {:?}", next_key_str, next_key);
+    eprintln!("  Previous: {} -> {:?}", previous_key_str, previous_key);
+    
+    // Create shared state for modifier keys
+    let ctrl_pressed = Arc::new(AtomicBool::new(false));
+    let shift_pressed = Arc::new(AtomicBool::new(false));
+    let alt_pressed = Arc::new(AtomicBool::new(false));
+    
+    let ctrl_clone = Arc::clone(&ctrl_pressed);
+    let shift_clone = Arc::clone(&shift_pressed);
+    let alt_clone = Arc::clone(&alt_pressed);
+    
+    if let Err(error) = listen(move |event| {
+        match event.event_type {
+            EventType::KeyPress(key) => {
+                // Track modifier key states
+                match key {
+                    Key::ControlLeft | Key::ControlRight => {
+                        ctrl_clone.store(true, Ordering::Relaxed);
+                        return;
+                    },
+                    Key::ShiftLeft | Key::ShiftRight => {
+                        shift_clone.store(true, Ordering::Relaxed);
+                        return;
+                    },
+                    Key::Alt => {
+                        alt_clone.store(true, Ordering::Relaxed);
+                        return;
+                    },
+                    _ => {}
+                }
+                
+                // Get current modifier states
+                let has_ctrl = ctrl_pressed.load(Ordering::Relaxed);
+                let has_shift = shift_pressed.load(Ordering::Relaxed);
+                let has_alt = alt_pressed.load(Ordering::Relaxed);
+                
+                println!("Detected key: {:?} | Ctrl: {}, Shift: {}, Alt: {}", key, has_ctrl, has_shift, has_alt);
+                
+                // Compare with keybinds (check key and modifiers match)
 
-    thread::spawn(move || {
-        let _ = listen(move |event: Event| {
-            if let EventType::KeyPress(key) = event.event_type {
-                let _ = tx.send(key);
+                if let Some(tk) = toggle_key {
+                    if key == tk && has_ctrl == toggle_key_str.contains("Ctrl") && 
+                       has_shift == toggle_key_str.contains("Shift") && has_alt == toggle_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Toggle);
+                    }
+                }
+                if let Some(pk) = play_key {
+                    if key == pk && has_ctrl == play_key_str.contains("Ctrl") && 
+                       has_shift == play_key_str.contains("Shift") && has_alt == play_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Play);
+                    }
+                }
+                if let Some(psk) = pause_key {
+                    if key == psk && has_ctrl == pause_key_str.contains("Ctrl") && 
+                       has_shift == pause_key_str.contains("Shift") && has_alt == pause_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Pause);
+                    }
+                }
+                if let Some(nk) = next_key {
+                    if key == nk && has_ctrl == next_key_str.contains("Ctrl") && 
+                       has_shift == next_key_str.contains("Shift") && has_alt == next_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Next);
+                    }
+                }
+                if let Some(pk) = previous_key {
+                    if key == pk && has_ctrl == previous_key_str.contains("Ctrl") && 
+                       has_shift == previous_key_str.contains("Shift") && has_alt == previous_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Previous);
+                    }
+                }
+            },
+            EventType::KeyRelease(key) => {
+                
+                match key {
+                    Key::ControlLeft | Key::ControlRight => {
+                        ctrl_pressed.store(false, Ordering::Relaxed);
+                    },
+                    Key::ShiftLeft | Key::ShiftRight => {
+                        shift_pressed.store(false, Ordering::Relaxed);
+                    },
+                    Key::Alt => {
+                        alt_pressed.store(false, Ordering::Relaxed);
+                    },
+                    _ => {}
+                }
             }
-        });
-    });
-
-    let key = rx.recv().unwrap(); // waits for first key
-    format!("{:?}", key)
-}
-
-async fn register_ordered_key_combinations() -> Vec<String> {
-    use rdev::{listen, Event, EventType};
-    use tokio::sync::mpsc;
-    use std::thread;
-
-    let (tx, mut rx) = mpsc::channel(1);
-
-    // Spawn blocking rdev listener
-    thread::spawn(move || {
-        let _ = listen(move |event: Event| {
-            if let EventType::KeyPress(key) = event.event_type {
-                let _ = tx.blocking_send(format!("{:?}", key));
-            }
-        });
-    });
-
-    // Wait for the first key press
-    if let Some(key) = rx.recv().await {
-        vec![key]
-    } else {
-        vec![]
+            _ => {}
+        }
+    }) {
+        println!("Error: {:?}", error);
     }
 }
 
+
 pub fn str_to_key(s: &str) -> Option<Key> {
-    match s.to_uppercase().as_str() {
+    // Take last part after '+' and normalize. Accept values like "A" or "KeyA" or " KeyA "
+    let key_part = s.split('+').last().unwrap_or(s).trim();
+    let key_part = if key_part.to_uppercase().starts_with("KEY") {
+        // strip leading "Key" prefix
+        key_part[3..].trim()
+    } else {
+        key_part
+    };
+
+    match key_part.to_uppercase().as_str() {
         "A" => Some(Key::KeyA),
         "B" => Some(Key::KeyB),
         "C" => Some(Key::KeyC),
@@ -110,8 +234,8 @@ pub fn str_to_key(s: &str) -> Option<Key> {
 }
 
 
-pub fn key_to_str(key: Key) -> &'static str {
-    match key {
+pub fn key_to_str(key: &Key) -> &'static str {
+    match *key {
         Key::KeyA => "A",
         Key::KeyB => "B",
         Key::KeyC => "C",
