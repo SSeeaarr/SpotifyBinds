@@ -2,6 +2,8 @@ use rdev::{listen, Event, EventType, Key};
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use tokio::sync::mpsc::UnboundedSender;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 
 // Track which modifier keys are currently pressed
 thread_local! {
@@ -54,8 +56,7 @@ pub fn listenforkey_send(
     next_key_str: String,
     previous_key_str: String,
 ) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
+    
     
     // Parse the keybinds using str_to_key
     let toggle_key = str_to_key(&toggle_key_str);
@@ -174,6 +175,8 @@ pub fn str_to_key(s: &str) -> Option<Key> {
         key_part
     };
 
+    println!("Parsing key part: '{}'", key_part);
+
     match key_part.to_uppercase().as_str() {
         "A" => Some(Key::KeyA),
         "B" => Some(Key::KeyB),
@@ -215,6 +218,17 @@ pub fn str_to_key(s: &str) -> Option<Key> {
         "RIGHT" => Some(Key::RightArrow),
         "UP" => Some(Key::UpArrow),
         "DOWN" => Some(Key::DownArrow),
+        "HOME" => Some(Key::Home),
+        "END" => Some(Key::End),
+        "PAGEUP" | "PageUpDetected" => Some(Key::PageUp),       // only god knows why 
+        "PAGEDOWN" | "PageDownDetected "=> Some(Key::PageDown), // egui uses "detected" for pgup/down
+        "PAUSE" => Some(Key::Pause),
+        "INS" | "INSERT" => Some(Key::Insert),
+        "DEL" => Some(Key::Delete),
+        "FN" => Some(Key::Function),
+        "SCROLLLOCk" => Some(Key::ScrollLock),
+        "PRINTSCREEN" => Some(Key::PrintScreen),
+
 
         "F1" => Some(Key::F1),
         "F2" => Some(Key::F2),

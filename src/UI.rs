@@ -315,6 +315,7 @@ fn main() -> eframe::Result {
                             let pause_key = self.pause.clone();
                             let next_key = self.next.clone();
                             let previous_key = self.previous.clone();
+                            
 
                             // Create a tokio unbounded channel for the async spotify worker
                             let (tx_tokio, mut rx_tokio) = tokio::sync::mpsc::unbounded_channel::<KeyEvent>();

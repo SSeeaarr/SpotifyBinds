@@ -17,7 +17,7 @@ async fn spotifyinit() -> AuthCodeSpotify {
     // export RSPOTIFY_CLIENT_SECRET="secret"
     //
     // These will then be read with `from_env`.
-    // 
+    //
     // Otherwise, set client_id and client_secret explictly:
     //
     // ```
