@@ -3,4 +3,8 @@
 token.json
 .spotify_token_cache.json
 .spotify_binds.json
+<<<<<<< HEAD
 .spotify_settings.json
+=======
+.spotify_settings.json
+>>>>>>> 86f4f2b5a616adb20dcc16da5081e3232daf4c95
