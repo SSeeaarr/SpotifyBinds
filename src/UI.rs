@@ -84,8 +84,8 @@ fn main() -> eframe::Result {
                 app.settings = s;
             }
             // load saved binds (if any) and populate UI fields
-            if let Ok(b) = Bindings::load() {
-                app.bindings = b.clone();
+            if let Ok(b) = AppSettings::load() {
+                app.settings = b.clone();
                 if !b.toggle.is_empty() { app.toggleplayback = b.toggle.clone(); }
                 if !b.play.is_empty() { app.play = b.play.clone(); }
                 if !b.pause.is_empty() { app.pause = b.pause.clone(); }
@@ -116,7 +116,13 @@ fn main() -> eframe::Result {
     struct AppSettings {
         start_on_login: bool,
         start_minimized: bool,
+        toggle: String,
+        play: String,
+        pause: String,
+        next: String,
+        previous: String,
     }
+
 
     impl AppSettings {
         fn path() -> PathBuf {
@@ -140,36 +146,7 @@ fn main() -> eframe::Result {
         }
     }
 
-    #[derive(Serialize, Deserialize, Default, Clone)]
-    struct Bindings {
-        toggle: String,
-        play: String,
-        pause: String,
-        next: String,
-        previous: String,
-    }
-
-    impl Bindings {
-        fn path() -> PathBuf {
-            PathBuf::from(".spotify_binds.json")
-        }
-
-        fn load() -> Result<Self, std::io::Error> {
-            let p = Self::path();
-            if p.exists() {
-                let s = std::fs::read_to_string(p)?;
-                let cfg: Self = serde_json::from_str(&s)?;
-                Ok(cfg)
-            } else {
-                Ok(Self::default())
-            }
-        }
-
-        fn save(&self) -> Result<(), std::io::Error> {
-            let s = serde_json::to_string_pretty(self).unwrap();
-            std::fs::write(Self::path(), s)
-        }
-    }
+    
 
     // Our application initial state:
     struct Appinfo {
@@ -185,7 +162,6 @@ fn main() -> eframe::Result {
         previous: String,
         spotify: Option<AuthCodeSpotify>,
         settings: AppSettings,
-        bindings: Bindings,
     }
 
     impl Default for Appinfo {
@@ -203,7 +179,6 @@ fn main() -> eframe::Result {
                     previous: "           ".to_owned(),
                     spotify: None,
                     settings: AppSettings::default(),
-                    bindings: Bindings::default(),
                 }
         }
     }
@@ -366,8 +341,8 @@ fn main() -> eframe::Result {
 
                         if let Some(key_combo) = capture_key_input(ctx) {
                             self.toggleplayback = key_combo.clone();
-                            self.bindings.toggle = key_combo;
-                            let _ = self.bindings.save();
+                            self.settings.toggle = key_combo;
+                            let _ = self.settings.save();
                             self.recording_target = None;
                         }
 
@@ -391,8 +366,8 @@ fn main() -> eframe::Result {
 
                         if let Some(key_combo) = capture_key_input(ctx) {
                             self.next = key_combo.clone();
-                            self.bindings.next = key_combo;
-                            let _ = self.bindings.save();
+                            self.settings.next = key_combo;
+                            let _ = self.settings.save();
                             self.recording_target = None;
                         }
 
@@ -416,8 +391,8 @@ fn main() -> eframe::Result {
 
                         if let Some(key_combo) = capture_key_input(ctx) {
                             self.previous = key_combo.clone();
-                            self.bindings.previous = key_combo;
-                            let _ = self.bindings.save();
+                            self.settings.previous = key_combo;
+                            let _ = self.settings.save();
                             self.recording_target = None;
                         }
 
@@ -441,8 +416,8 @@ fn main() -> eframe::Result {
 
                         if let Some(key_combo) = capture_key_input(ctx) {
                             self.play = key_combo.clone();
-                            self.bindings.play = key_combo;
-                            let _ = self.bindings.save();
+                            self.settings.play = key_combo;
+                            let _ = self.settings.save();
                             self.recording_target = None;
                         }
 
@@ -466,8 +441,8 @@ fn main() -> eframe::Result {
 
                         if let Some(key_combo) = capture_key_input(ctx) {
                             self.pause = key_combo.clone();
-                            self.bindings.pause = key_combo;
-                            let _ = self.bindings.save();
+                            self.settings.pause = key_combo;
+                            let _ = self.settings.save();
                             self.recording_target = None;
                         }
 
