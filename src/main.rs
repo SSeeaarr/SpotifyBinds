@@ -9,7 +9,7 @@ use std::io;
 include!("UI.rs");
 include!("savetoken.rs");
 
-async fn spotifyinit() -> AuthCodeSpotify {
+async fn spotifyinit() -> Option<AuthCodeSpotify> {
     // Set RSPOTIFY_CLIENT_ID and RS POTIFY_CLIENT_SECRET in an .env file (after
     // enabling the `env-file` feature) or export them manually:
     //
@@ -25,7 +25,7 @@ async fn spotifyinit() -> AuthCodeSpotify {
     // ```
     //let creds = Credentials::from_env().unwrap();
 
-    let token = MyToken::from_json().unwrap();
+    let token = MyToken::from_json().ok()?;
     let client_id = &token.RSPOTIFY_CLIENT_ID;
     let client_secret = &token.RSPOTIFY_CLIENT_SECRET;
     let redirect_uri = &token.RSPOTIFY_REDIRECT_URI;
@@ -58,13 +58,13 @@ async fn spotifyinit() -> AuthCodeSpotify {
     let spotify = AuthCodeSpotify::with_config(creds, oauth, config);
 
     // Obtaining the access token
-    let url = spotify.get_authorize_url(false).unwrap();
+    let url = spotify.get_authorize_url(false).ok()?;
 
     // This function requires the `cli` feature enabled.
 
-    spotify.prompt_for_token(&url).await.unwrap();
+    spotify.prompt_for_token(&url).await.ok()?;
 
-    spotify.clone()
+    Some(spotify)
 
     // Running the requests
     /*

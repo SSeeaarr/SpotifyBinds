@@ -15,4 +15,6 @@ rdev = "0.5.3"
 egui-notify = "0.21.0"
 winreg = "0.10"
 windows = { version = "0.48", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+tray-icon = "0.21.2"
+image = "0.25.9"
 

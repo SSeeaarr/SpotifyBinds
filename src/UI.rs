@@ -11,6 +11,7 @@ use windows::core::PCWSTR;
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, ShowWindow, SW_MINIMIZE};
 
 include!("hotkeyreg.rs");
+include!("iconhandler.rs");
 
 // helper: create/remove registry run key (module-level so main() can call it)
 fn set_startup(enabled: bool, app_name: &str, exe_path: &str, args: Option<&str>) -> std::io::Result<()> {
@@ -76,9 +77,16 @@ fn main() -> eframe::Result {
                 app.redirectUri = instance.RSPOTIFY_REDIRECT_URI.clone();
             }
 
-            app.spotify = Some(tokio::task::block_in_place(|| {
+            if let Some(spotify) = tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(spotifyinit())
-            }));
+            }) {
+                app.spotify = Some(spotify); //do we have a working spotify connection
+            } else {
+                app.spotify=None; //if not, continue with blank template
+            }
+
+            
+
             // load settings into app
             if let Ok(s) = AppSettings::load() {
                 app.settings = s;
@@ -92,6 +100,31 @@ fn main() -> eframe::Result {
                 if !b.next.is_empty() { app.next = b.next.clone(); }
                 if !b.previous.is_empty() { app.previous = b.previous.clone(); }
             }
+            let tray = icon();
+            let ctx = _cc.egui_ctx.clone();
+            
+            std::thread::spawn(move || {
+                let menu_channel = MenuEvent::receiver();
+                
+                loop {
+                    if let Ok(event) = menu_channel.recv() {
+                        match event.id.0.as_str() {
+                            "Show" => {
+                                println!("Show button clicked!");
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                                ctx.request_repaint();
+                            }
+                            "Quit" => {
+                                std::process::exit(0);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            });
+            app.tray_icon = Some(tray);
             
             Ok(Box::new(app))
         }),
@@ -121,6 +154,7 @@ fn main() -> eframe::Result {
         pause: String,
         next: String,
         previous: String,
+        
     }
 
 
@@ -162,6 +196,7 @@ fn main() -> eframe::Result {
         previous: String,
         spotify: Option<AuthCodeSpotify>,
         settings: AppSettings,
+        tray_icon: Option<TrayIcon>,
     }
 
     impl Default for Appinfo {
@@ -179,6 +214,7 @@ fn main() -> eframe::Result {
                     previous: "           ".to_owned(),
                     spotify: None,
                     settings: AppSettings::default(),
+                    tray_icon: None,
                 }
         }
     }
@@ -187,6 +223,13 @@ fn main() -> eframe::Result {
 
     impl eframe::App for Appinfo {
         fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+
+            if ctx.input(|i| i.viewport().close_requested()) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            }
+
+
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.heading("SpotifyBinds");
 
@@ -321,7 +364,7 @@ fn main() -> eframe::Result {
                                 }
                             });
 
-                            (self.toasts.success("Started (background worker)!"));
+                            (self.toasts.success("Started! Running in background."));
                         } else {
                             (self.toasts.info("Spotify client not initialized."));
                         }
