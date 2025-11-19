@@ -46,12 +46,15 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
     //     ..Default::default(),
     // };
     // ```
-    let oauth = OAuth::from_env(scopes!(
-        "user-read-currently-playing",
-        "user-modify-playback-state",
-        "user-read-playback-state"
-    ))
-    .unwrap();
+    let oauth = OAuth {
+        redirect_uri: redirect_uri.clone(),
+        scopes: scopes!(
+            "user-read-currently-playing",
+            "user-modify-playback-state",
+            "user-read-playback-state"
+        ),
+        ..Default::default()
+    };
 
     let config = Config {
         token_cached: true,
