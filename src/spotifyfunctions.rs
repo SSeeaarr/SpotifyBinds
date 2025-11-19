@@ -1,3 +1,4 @@
+use egui::{Context, Ui};
 use rspotify::{
     AuthCodeSpotify, ClientError, ClientResult, Config, Credentials, OAuth,
     model::{AdditionalType, Country, FullTrack, Market, PlayableItem, track},
@@ -203,6 +204,7 @@ impl SpotifyClient {
             }
         } else {
             println!("No active playback");
+            
         }
 
         Ok(())

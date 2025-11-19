@@ -16,21 +16,6 @@ include!("hotkeyreg.rs");
 include!("iconhandler.rs");
 include!("spotifyfunctions.rs");
 
-
-// helper: create/remove registry run key (module-level so main() can call it)
-fn set_startup(enabled: bool, app_name: &str, exe_path: &str, args: Option<&str>) -> std::io::Result<()> {
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let run_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    let (key, _disp) = hkcu.create_subkey(run_path)?;
-    if enabled {
-        let value = if let Some(a) = args { format!("\"{}\" {}", exe_path, a) } else { format!("\"{}\"", exe_path) };
-        key.set_value(app_name, &value)?;
-    } else {
-        let _ = key.delete_value(app_name);
-    }
-    Ok(())
-}
-
 // helper: attempt to minimize a window by title after a short delay (module-level)
 fn minimize_window_by_title(title: &str) {
     let title_w: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
@@ -74,6 +59,7 @@ fn main() -> eframe::Result {
     eframe::run_native("SpotifyBinds", options, Box::new(|_cc| {
             let mut app = Appinfo::default();
             
+
             // Load token data
             if let Ok(instance) = MyToken::from_json() {
                 app.clientId = instance.RSPOTIFY_CLIENT_ID.clone();
@@ -110,6 +96,51 @@ fn main() -> eframe::Result {
                 if !b.next.is_empty() { app.next = b.next.clone(); }
                 if !b.previous.is_empty() { app.previous = b.previous.clone(); }
             }
+
+            if app.settings.start_on_login {
+                if let Some(spotify) = app.spotify.take() {
+                            let toggle_key = app.toggleplayback.clone();
+                            let play_key = app.play.clone();
+                            let pause_key = app.pause.clone();
+                            let next_key = app.next.clone();
+                            let previous_key = app.previous.clone();
+                            
+
+                            // Create a tokio unbounded channel for the async spotify worker
+                            let (tx_tokio, mut rx_tokio) = tokio::sync::mpsc::unbounded_channel::<KeyEvent>();
+
+                            // Start the blocking rdev listener on its own OS thread and pass the
+                            // tokio sender directly so it can forward events without a bridge.
+                            let toggle = toggle_key.clone();
+                            let play = play_key.clone();
+                            let pause = pause_key.clone();
+                            let next = next_key.clone();
+                            let previous = previous_key.clone();
+                            let tx_clone = tx_tokio.clone();
+                            std::thread::spawn(move || {
+                                listenforkey_send(tx_clone, toggle, play, pause, next, previous);
+                            });
+
+                            // Spawn the spotify worker on the tokio runtime. It owns the AuthCodeSpotify.
+                            tokio::spawn(async move {
+                                let client = SpotifyClient { spotify };
+                                while let Some(ev) = rx_tokio.recv().await {
+                                    match ev {
+                                        KeyEvent::Toggle => { let _ = client.toggle_playback(None).await; }
+                                        KeyEvent::Play => { let _ = client.play(None).await; }
+                                        KeyEvent::Pause => { let _ = client.pause(None).await; }
+                                        KeyEvent::Next => { let _ = client.next_track(None).await; }
+                                        KeyEvent::Previous => { let _ = client.previous_track(None).await; }
+                                    }
+                                }
+                            });
+
+                            (app.toasts.success("Started! Running in background."));
+                        } else {
+                            (app.toasts.info("Spotify client not initialized."));
+                        }
+            }
+
             let tray = icon();
             let ctx = _cc.egui_ctx.clone();
             
@@ -123,12 +154,11 @@ fn main() -> eframe::Result {
                             "Show" => {
                                 
                                 println!("Show button clicked!");
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                                
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                                 ctx.request_repaint();
-                                
+
                             }
                             "Quit" => {
                                 std::process::exit(0);
