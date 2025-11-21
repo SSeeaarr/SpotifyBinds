@@ -1,7 +1,7 @@
 //#![windows_subsystem = "windows"]
 use eframe::egui;
 
-use egui_notify::{Toast, Toasts};
+use egui_notify::Toasts;
 use std::time::Duration;
 use std::os::windows::ffi::OsStrExt;
 use winreg::RegKey;
@@ -9,29 +9,12 @@ use winreg::enums::*;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use windows::core::PCWSTR;
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, ShowWindow, SW_MINIMIZE};
-
+use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::Foundation::{HWND, BOOL, LPARAM};
 
 include!("hotkeyreg.rs");
 include!("iconhandler.rs");
 include!("spotifyfunctions.rs");
-
-// helper: attempt to minimize a window by title after a short delay (module-level)
-fn minimize_window_by_title(title: &str) {
-    let title_w: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(300));
-        unsafe {
-            let hwnd = FindWindowW(PCWSTR(title_w.as_ptr()), PCWSTR::null());
-            if hwnd.0 != 0 {
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
-            }
-        }
-    });
-}
-
-
-
 
 fn main() -> eframe::Result {
     
@@ -39,9 +22,10 @@ fn main() -> eframe::Result {
 
     // If the process was started with --minimized we'll spawn a helper thread later
     let start_minimized_arg = std::env::args().any(|a| a == "--minimized");
+    let start_bg_arg = std::env::args().any(|a| a == "--background");
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]), //window dimensions
+    let mut options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]).with_visible(!start_bg_arg), //window dimensions
         ..Default::default()
     };
     
@@ -55,9 +39,14 @@ fn main() -> eframe::Result {
         // title must match the string passed to run_native below
         minimize_window_by_title("SpotifyBinds");
     }
+    if start_bg_arg {
+        options.viewport = options.viewport.with_visible(false);
+    }
 
     eframe::run_native("SpotifyBinds", options, Box::new(|_cc| {
             let mut app = Appinfo::default();
+
+            
             
 
             // Load token data
@@ -142,7 +131,6 @@ fn main() -> eframe::Result {
             }
 
             let tray = icon();
-            let ctx = _cc.egui_ctx.clone();
             
             std::thread::spawn(move || {
                 
@@ -151,14 +139,16 @@ fn main() -> eframe::Result {
                 loop {
                     if let Ok(event) = menu_channel.recv() {
                         match event.id.0.as_str() {
-                            "Show" => {
-                                
-                                println!("Show button clicked!");
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                                ctx.request_repaint();
-
+                           "Show" => {
+                                let wide: Vec<u16> = OsStr::new("SpotifyBinds").encode_wide().chain(Some(0)).collect();
+                                unsafe {
+                                    let hwnd = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr()));
+                                    if hwnd.0 != 0 {
+                                        std::thread::sleep(Duration::from_millis(100));
+                                        ShowWindow(hwnd, SW_RESTORE);
+                                        SetForegroundWindow(hwnd);
+                                    }
+                                }
                             }
                             "Quit" => {
                                 std::process::exit(0);
@@ -193,6 +183,7 @@ fn main() -> eframe::Result {
     struct AppSettings {
         start_on_login: bool,
         start_minimized: bool,
+        start_in_bg: bool,
         toggle: String,
         play: String,
         pause: String,
@@ -273,9 +264,12 @@ fn main() -> eframe::Result {
         fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 
             if ctx.input(|i| i.viewport().close_requested()) {
-                    
-                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            }
+            if self.settings.start_in_bg {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             }
             
             
@@ -296,21 +290,6 @@ fn main() -> eframe::Result {
                         let _ = key.delete_value(app_name);
                     }
                     Ok(())
-                }
-
-                // helper: attempt to minimize a window by title after a short delay
-                fn minimize_window_by_title(title: &str) {
-                    let title_w: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(300));
-                        unsafe {
-                            let hwnd = FindWindowW(PCWSTR(title_w.as_ptr()), PCWSTR::null());
-                            // HWND::0 is 0 if invalid
-                            if hwnd.0 != 0 {
-                                let _ = ShowWindow(hwnd, SW_MINIMIZE);
-                            }
-                        }
-                    });
                 }
 
                 //notifications
@@ -366,34 +345,6 @@ fn main() -> eframe::Result {
                 }
                 
 
-                ui.horizontal(|ui| {
-                    // Settings toggles
-                    let mut changed = false;
-                    let mut start_on_login = self.settings.start_on_login;
-                    if ui.checkbox(&mut start_on_login, "Start on login").changed() {
-                        self.settings.start_on_login = start_on_login;
-                        changed = true;
-                    }
-
-                    let mut start_minimized = self.settings.start_minimized;
-                    if ui.checkbox(&mut start_minimized, "Start minimized").changed() {
-                        self.settings.start_minimized = start_minimized;
-                        changed = true;
-                    }
-
-                    if changed {
-                        // persist settings
-                        let _ = self.settings.save();
-
-                        // update registry entry if requested
-                        if let Ok(exe) = std::env::current_exe() {
-                            let exe_path = exe.display().to_string();
-                            let args = if self.settings.start_minimized { Some("--minimized") } else { None };
-                            let _ = set_startup(self.settings.start_on_login, "SpotifyBinds", &exe_path, args);
-                        }
-                    }
-                });
-
                 ui.horizontal(|ui|{
                     if ui.button("Start").clicked() {
                         // Move the spotify client into a background async worker so
@@ -445,6 +396,48 @@ fn main() -> eframe::Result {
                 ui.add_space(10.0);
                 ui.separator();
                 ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    // Settings toggles
+                    let mut changed = false;
+                    let mut start_on_login = self.settings.start_on_login;
+                    if ui.checkbox(&mut start_on_login, "Start on login").changed() {
+                        self.settings.start_on_login = start_on_login;
+                        changed = true;
+                    }
+
+                    let mut start_minimized = self.settings.start_minimized;
+                    if ui.checkbox(&mut start_minimized, "Start minimized").changed() {
+                        self.settings.start_minimized = start_minimized;
+                        changed = true;
+                    }
+
+                    let mut start_in_background = self.settings.start_in_bg;
+                    if ui.checkbox(&mut start_in_background, "Start in background").changed() {
+                        self.settings.start_in_bg = start_in_background;
+                        changed = true;
+                    }
+
+
+                    if changed {
+                        // persist settings
+                        let _ = self.settings.save();
+
+                        // update registry entry if requested
+                        if let Ok(exe) = std::env::current_exe() {
+                            let exe_path = exe.display().to_string();
+                            let args = if self.settings.start_minimized {
+                                Some("--minimized") 
+                            }
+                            else if self.settings.start_in_bg {
+                                Some("--background") 
+                            } else {
+                                None
+                            };
+                            let _ = set_startup(self.settings.start_on_login, "SpotifyBinds", &exe_path, args);
+                        }
+                    }
+                });
 
 
                 ui.horizontal(|ui| {
@@ -575,4 +568,54 @@ fn main() -> eframe::Result {
             });
         }
     }
+
+fn minimize_window_by_title(title: &str) {
+    let title_w: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        unsafe {
+            let hwnd = FindWindowW(PCWSTR(title_w.as_ptr()), PCWSTR::null());
+            if hwnd.0 != 0 {
+                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            }
+        }
+    });
+}
+
+#[cfg(windows)] //HUGE thanks to phoglund on github, this is the only thing that worked.
+pub unsafe fn force_window_wakeup() { //Do I know whats going on here? nope. I think its poking the window
+    use windows::Win32::UI::WindowsAndMessaging::*; // because it lies in a dormant state after calling
+    use windows::Win32::System::Threading::GetCurrentProcessId; //visible(false) on the viewport
+
+    unsafe extern "system" fn enum_proc(hwnd: HWND, _lparam: LPARAM) -> BOOL {
+        let mut pid: u32 = 0;
+
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+
+        let current_pid = unsafe { GetCurrentProcessId() };
+
+        if pid == current_pid {
+            if unsafe { IsIconic(hwnd).as_bool() } {
+                unsafe {
+                    ShowWindow(hwnd, SW_RESTORE);
+                }
+            } else {
+                unsafe {
+                    ShowWindow(hwnd, SW_SHOW);
+                }
+            }
+
+            return BOOL(0); // stop enum
+        }
+
+        BOOL(1)
+    }
+
+    unsafe {
+        EnumWindows(Some(enum_proc), LPARAM(0));
+    }
+}
+
 
