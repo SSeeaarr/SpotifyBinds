@@ -11,6 +11,8 @@ use std::path::PathBuf;
 use windows::core::PCWSTR;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::Win32::Foundation::{HWND, BOOL, LPARAM};
+use auto_launch::AutoLaunch;
+use std::env;
 
 include!("hotkeyreg.rs");
 include!("iconhandler.rs");
@@ -20,12 +22,15 @@ fn main() -> eframe::Result {
     
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
+    
+
     // If the process was started with --minimized we'll spawn a helper thread later
     let start_minimized_arg = std::env::args().any(|a| a == "--minimized");
     let start_bg_arg = std::env::args().any(|a| a == "--background");
+    
 
     let mut options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]).with_visible(!start_bg_arg), //window dimensions
+        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]).with_visible(!start_bg_arg),
         ..Default::default()
     };
     
@@ -70,12 +75,8 @@ fn main() -> eframe::Result {
                 }
             }
 
-            
 
-            // load settings into app
-            if let Ok(s) = AppSettings::load() {
-                app.settings = s;
-            }
+            
             // load saved binds (if any) and populate UI fields
             if let Ok(b) = AppSettings::load() {
                 app.settings = b.clone();
@@ -86,8 +87,32 @@ fn main() -> eframe::Result {
                 if !b.previous.is_empty() { app.previous = b.previous.clone(); }
             }
 
-            if app.settings.start_on_login {
-                if let Some(spotify) = app.spotify.take() {
+            let exe_path = env::current_exe()
+                .expect("Failed to get current executable path")
+                .to_string_lossy()
+                .to_string();
+
+            //wrap in quotes in case spaces in user folder name
+            let quoted_exe_path = format!("\"{}\"", exe_path);
+
+            let mut args = Vec::new();
+            if start_minimized_arg {
+                args.push("--minimized");
+            }
+            if start_bg_arg {
+                args.push("--background");
+            }
+            let autolaunch = AutoLaunch::new("SpotifyBinds", &quoted_exe_path, &args);
+            if app.settings.start_on_login{
+                let _ = autolaunch.enable();
+            } else {
+                let _ = autolaunch.disable();
+            }
+
+            if app.settings.start_on_login || autolaunch.is_enabled().unwrap_or(false) {
+                app.alreadystarted = true;
+                if let Some(ref spotify) = app.spotify {
+                            let spotify_clone = spotify.clone();
                             let toggle_key = app.toggleplayback.clone();
                             let play_key = app.play.clone();
                             let pause_key = app.pause.clone();
@@ -112,7 +137,7 @@ fn main() -> eframe::Result {
 
                             // Spawn the spotify worker on the tokio runtime. It owns the AuthCodeSpotify.
                             tokio::spawn(async move {
-                                let client = SpotifyClient { spotify };
+                                let client = SpotifyClient { spotify: spotify_clone };
                                 while let Some(ev) = rx_tokio.recv().await {
                                     match ev {
                                         KeyEvent::Toggle => { let _ = client.toggle_playback(None).await; }
@@ -233,7 +258,7 @@ fn main() -> eframe::Result {
         settings: AppSettings,
         tray_icon: Option<TrayIcon>,
         spotifyinitialized: bool,
-        
+        alreadystarted: bool,
     }
 
     impl Default for Appinfo {
@@ -253,7 +278,7 @@ fn main() -> eframe::Result {
                     settings: AppSettings::default(),
                     tray_icon: None,
                     spotifyinitialized: false,
-                    
+                    alreadystarted: false,
                 }
         }
     }
@@ -268,29 +293,13 @@ fn main() -> eframe::Result {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             }
-            if self.settings.start_in_bg {
+            if self.settings.start_in_bg && !ctx.input(|i| i.viewport().focused.unwrap()){
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             }
             
-            
-
 
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.heading("SpotifyBinds");
-
-                // helper: create/remove registry run key
-                fn set_startup(enabled: bool, app_name: &str, exe_path: &str, args: Option<&str>) -> std::io::Result<()> {
-                    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-                    let run_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-                    let (key, _disp) = hkcu.create_subkey(run_path)?;
-                    if enabled {
-                        let value = if let Some(a) = args { format!("\"{}\" {}", exe_path, a) } else { format!("\"{}\"", exe_path) };
-                        key.set_value(app_name, &value)?;
-                    } else {
-                        let _ = key.delete_value(app_name);
-                    }
-                    Ok(())
-                }
 
                 //notifications
                 self.toasts.show(ctx);
@@ -346,7 +355,10 @@ fn main() -> eframe::Result {
                 
 
                 ui.horizontal(|ui|{
-                    if ui.button("Start").clicked() {
+                    
+                    if ui.button("Start").clicked() && self.alreadystarted == false {
+                        self.alreadystarted=true;
+                        
                         // Move the spotify client into a background async worker so
                         // key events are handled even when the UI is minimized.
                         if let Some(spotify) = self.spotify.take() {
@@ -422,20 +434,6 @@ fn main() -> eframe::Result {
                     if changed {
                         // persist settings
                         let _ = self.settings.save();
-
-                        // update registry entry if requested
-                        if let Ok(exe) = std::env::current_exe() {
-                            let exe_path = exe.display().to_string();
-                            let args = if self.settings.start_minimized {
-                                Some("--minimized") 
-                            }
-                            else if self.settings.start_in_bg {
-                                Some("--background") 
-                            } else {
-                                None
-                            };
-                            let _ = set_startup(self.settings.start_on_login, "SpotifyBinds", &exe_path, args);
-                        }
                     }
                 });
 
