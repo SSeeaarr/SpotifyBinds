@@ -1,7 +1,7 @@
-//#![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 use eframe::egui;
 
-use egui_notify::{Toast, Toasts};
+use egui_notify::Toasts;
 use std::time::Duration;
 use std::os::windows::ffi::OsStrExt;
 use winreg::RegKey;
@@ -9,39 +9,30 @@ use winreg::enums::*;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use windows::core::PCWSTR;
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, ShowWindow, SW_MINIMIZE};
-
+use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW};
+use windows::Win32::Foundation::{HWND, BOOL, LPARAM};
+use auto_launch::AutoLaunch;
+use std::env;
 
 include!("hotkeyreg.rs");
 include!("iconhandler.rs");
 include!("spotifyfunctions.rs");
 
-// helper: attempt to minimize a window by title after a short delay (module-level)
-fn minimize_window_by_title(title: &str) {
-    let title_w: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(300));
-        unsafe {
-            let hwnd = FindWindowW(PCWSTR(title_w.as_ptr()), PCWSTR::null());
-            if hwnd.0 != 0 {
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
-            }
-        }
-    });
-}
-
-
-
-
 fn main() -> eframe::Result {
     
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
+    
+
     // If the process was started with --minimized we'll spawn a helper thread later
     let start_minimized_arg = std::env::args().any(|a| a == "--minimized");
+    let start_bg_arg = std::env::args().any(|a| a == "--background");
+    
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]), //window dimensions
+    let mut options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]).with_visible(!start_bg_arg),
+        vsync: false, // Disable vsync to control framerate manually
         ..Default::default()
     };
     
@@ -55,9 +46,14 @@ fn main() -> eframe::Result {
         // title must match the string passed to run_native below
         minimize_window_by_title("SpotifyBinds");
     }
+    if start_bg_arg {
+        options.viewport = options.viewport.with_visible(false);
+    }
 
     eframe::run_native("SpotifyBinds", options, Box::new(|_cc| {
             let mut app = Appinfo::default();
+
+            
             
 
             // Load token data
@@ -81,12 +77,8 @@ fn main() -> eframe::Result {
                 }
             }
 
-            
 
-            // load settings into app
-            if let Ok(s) = AppSettings::load() {
-                app.settings = s;
-            }
+            
             // load saved binds (if any) and populate UI fields
             if let Ok(b) = AppSettings::load() {
                 app.settings = b.clone();
@@ -97,8 +89,32 @@ fn main() -> eframe::Result {
                 if !b.previous.is_empty() { app.previous = b.previous.clone(); }
             }
 
-            if app.settings.start_on_login {
-                if let Some(spotify) = app.spotify.take() {
+            let exe_path = env::current_exe()
+                .expect("Failed to get current executable path")
+                .to_string_lossy()
+                .to_string();
+
+            //wrap in quotes in case spaces in user folder name
+            let quoted_exe_path = format!("\"{}\"", exe_path);
+
+            let mut args = Vec::new();
+            if start_minimized_arg {
+                args.push("--minimized");
+            }
+            if start_bg_arg {
+                args.push("--background");
+            }
+            let autolaunch = AutoLaunch::new("SpotifyBinds", &quoted_exe_path, &args);
+            if app.settings.start_on_login{
+                let _ = autolaunch.enable();
+            } else {
+                let _ = autolaunch.disable();
+            }
+
+            if (app.settings.start_on_login || autolaunch.is_enabled().unwrap_or(false)) && app.spotifyinitialized {
+                app.alreadystarted = true;
+                if let Some(ref spotify) = app.spotify {
+                            let spotify_clone = spotify.clone();
                             let toggle_key = app.toggleplayback.clone();
                             let play_key = app.play.clone();
                             let pause_key = app.pause.clone();
@@ -123,7 +139,7 @@ fn main() -> eframe::Result {
 
                             // Spawn the spotify worker on the tokio runtime. It owns the AuthCodeSpotify.
                             tokio::spawn(async move {
-                                let client = SpotifyClient { spotify };
+                                let client = SpotifyClient { spotify: spotify_clone };
                                 while let Some(ev) = rx_tokio.recv().await {
                                     match ev {
                                         KeyEvent::Toggle => { let _ = client.toggle_playback(None).await; }
@@ -142,7 +158,6 @@ fn main() -> eframe::Result {
             }
 
             let tray = icon();
-            let ctx = _cc.egui_ctx.clone();
             
             std::thread::spawn(move || {
                 
@@ -151,14 +166,9 @@ fn main() -> eframe::Result {
                 loop {
                     if let Ok(event) = menu_channel.recv() {
                         match event.id.0.as_str() {
-                            "Show" => {
-                                
-                                println!("Show button clicked!");
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                                ctx.request_repaint();
-
+                           "Show" => {
+                                // Use helper to restore styles & show window.
+                                restore_and_show_window("SpotifyBinds");
                             }
                             "Quit" => {
                                 std::process::exit(0);
@@ -193,6 +203,7 @@ fn main() -> eframe::Result {
     struct AppSettings {
         start_on_login: bool,
         start_minimized: bool,
+        start_in_bg: bool,
         toggle: String,
         play: String,
         pause: String,
@@ -204,6 +215,13 @@ fn main() -> eframe::Result {
 
     impl AppSettings {
         fn path() -> PathBuf {
+            // Use executable directory for persistence so autostart with a
+            // different working directory still finds the settings file.
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    return dir.join(".spotify_settings.json");
+                }
+            }
             PathBuf::from(".spotify_settings.json")
         }
 
@@ -242,7 +260,7 @@ fn main() -> eframe::Result {
         settings: AppSettings,
         tray_icon: Option<TrayIcon>,
         spotifyinitialized: bool,
-        
+        alreadystarted: bool,
     }
 
     impl Default for Appinfo {
@@ -262,7 +280,7 @@ fn main() -> eframe::Result {
                     settings: AppSettings::default(),
                     tray_icon: None,
                     spotifyinitialized: false,
-                    
+                    alreadystarted: false,
                 }
         }
     }
@@ -273,45 +291,18 @@ fn main() -> eframe::Result {
         fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 
             if ctx.input(|i| i.viewport().close_requested()) {
-                    
-                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                // Minimize AND remove from taskbar by adjusting extended window style.
+                minimize_and_hide_from_taskbar("SpotifyBinds");
+            }
+            if self.settings.start_in_bg && !self.alreadystarted && !ctx.input(|i| i.viewport().focused.unwrap()){
+                self.alreadystarted = true;
+                minimize_and_hide_from_taskbar("SpotifyBinds");
             }
             
-            
-
 
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.heading("SpotifyBinds");
-
-                // helper: create/remove registry run key
-                fn set_startup(enabled: bool, app_name: &str, exe_path: &str, args: Option<&str>) -> std::io::Result<()> {
-                    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-                    let run_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-                    let (key, _disp) = hkcu.create_subkey(run_path)?;
-                    if enabled {
-                        let value = if let Some(a) = args { format!("\"{}\" {}", exe_path, a) } else { format!("\"{}\"", exe_path) };
-                        key.set_value(app_name, &value)?;
-                    } else {
-                        let _ = key.delete_value(app_name);
-                    }
-                    Ok(())
-                }
-
-                // helper: attempt to minimize a window by title after a short delay
-                fn minimize_window_by_title(title: &str) {
-                    let title_w: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(300));
-                        unsafe {
-                            let hwnd = FindWindowW(PCWSTR(title_w.as_ptr()), PCWSTR::null());
-                            // HWND::0 is 0 if invalid
-                            if hwnd.0 != 0 {
-                                let _ = ShowWindow(hwnd, SW_MINIMIZE);
-                            }
-                        }
-                    });
-                }
 
                 //notifications
                 self.toasts.show(ctx);
@@ -366,36 +357,11 @@ fn main() -> eframe::Result {
                 }
                 
 
-                ui.horizontal(|ui| {
-                    // Settings toggles
-                    let mut changed = false;
-                    let mut start_on_login = self.settings.start_on_login;
-                    if ui.checkbox(&mut start_on_login, "Start on login").changed() {
-                        self.settings.start_on_login = start_on_login;
-                        changed = true;
-                    }
-
-                    let mut start_minimized = self.settings.start_minimized;
-                    if ui.checkbox(&mut start_minimized, "Start minimized").changed() {
-                        self.settings.start_minimized = start_minimized;
-                        changed = true;
-                    }
-
-                    if changed {
-                        // persist settings
-                        let _ = self.settings.save();
-
-                        // update registry entry if requested
-                        if let Ok(exe) = std::env::current_exe() {
-                            let exe_path = exe.display().to_string();
-                            let args = if self.settings.start_minimized { Some("--minimized") } else { None };
-                            let _ = set_startup(self.settings.start_on_login, "SpotifyBinds", &exe_path, args);
-                        }
-                    }
-                });
-
                 ui.horizontal(|ui|{
-                    if ui.button("Start").clicked() {
+                    
+                    if ui.button("Start").clicked() && self.alreadystarted == false {
+                        self.alreadystarted=true;
+                        
                         // Move the spotify client into a background async worker so
                         // key events are handled even when the UI is minimized.
                         if let Some(spotify) = self.spotify.take() {
@@ -445,6 +411,34 @@ fn main() -> eframe::Result {
                 ui.add_space(10.0);
                 ui.separator();
                 ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    // Settings toggles
+                    let mut changed = false;
+                    let mut start_on_login = self.settings.start_on_login;
+                    if ui.checkbox(&mut start_on_login, "Start on login").changed() {
+                        self.settings.start_on_login = start_on_login;
+                        changed = true;
+                    }
+
+                    let mut start_minimized = self.settings.start_minimized;
+                    if ui.checkbox(&mut start_minimized, "Start minimized").changed() {
+                        self.settings.start_minimized = start_minimized;
+                        changed = true;
+                    }
+
+                    let mut start_in_background = self.settings.start_in_bg;
+                    if ui.checkbox(&mut start_in_background, "Start in background").changed() {
+                        self.settings.start_in_bg = start_in_background;
+                        changed = true;
+                    }
+
+
+                    if changed {
+                        // persist settings
+                        let _ = self.settings.save();
+                    }
+                });
 
 
                 ui.horizontal(|ui| {
@@ -573,6 +567,97 @@ fn main() -> eframe::Result {
                 });
 
             });
+            
+            // Always cap framerate to reduce CPU
+            ctx.request_repaint_after(Duration::from_millis(33)); // ~30 FPS
         }
     }
 
+fn minimize_window_by_title(title: &str) {
+    let title_w: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        unsafe {
+            let hwnd = FindWindowW(PCWSTR(title_w.as_ptr()), PCWSTR::null());
+            if hwnd.0 != 0 {
+                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            }
+        }
+    });
+}
+
+
+#[cfg(windows)] //HUGE thanks to phoglund on github, this is the only thing that worked.
+pub unsafe fn force_window_wakeup() { //Do I know whats going on here? nope. I think its poking the window
+    use windows::Win32::UI::WindowsAndMessaging::*; // because it lies in a dormant state after calling
+    use windows::Win32::System::Threading::GetCurrentProcessId; //visible(false) on the viewport
+
+    unsafe extern "system" fn enum_proc(hwnd: HWND, _lparam: LPARAM) -> BOOL {
+        let mut pid: u32 = 0;
+
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+
+        let current_pid = unsafe { GetCurrentProcessId() };
+
+        if pid == current_pid {
+            if unsafe { IsIconic(hwnd).as_bool() } {
+                unsafe {
+                    ShowWindow(hwnd, SW_RESTORE);
+                }
+            } else {
+                unsafe {
+                    ShowWindow(hwnd, SW_SHOW);
+                }
+            }
+
+            return BOOL(0); // stop enum
+        }
+
+        BOOL(1)
+    }
+
+    unsafe {
+        EnumWindows(Some(enum_proc), LPARAM(0));
+    }
+}
+
+// Minimize the window (stops wgpu rendering) and adjust extended styles so it
+// does not appear on the taskbar. This avoids the higher CPU cost seen when
+// only hiding the window with SW_HIDE while still rendering.
+fn minimize_and_hide_from_taskbar(title: &str) {
+    let wide: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
+    unsafe {
+        let hwnd = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr()));
+        if hwnd.0 != 0 {
+            // Minimize first – this reduces GPU usage.
+            ShowWindow(hwnd, SW_MINIMIZE);
+            // Modify extended window style: remove APPWINDOW, add TOOLWINDOW so it
+            // is not shown on the taskbar but can have a tray icon.
+            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let mut new_style = ex_style | WS_EX_TOOLWINDOW.0 as i32;
+            new_style &= !(WS_EX_APPWINDOW.0 as i32);
+            SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+        }
+    }
+}
+
+// Restore window: undo style change and bring window back (Show button)
+fn restore_and_show_window(title: &str) {
+    let wide: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
+    unsafe {
+        let hwnd = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr()));
+        if hwnd.0 != 0 {
+            // Restore extended style so it appears again on taskbar.
+            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let mut new_style = ex_style | WS_EX_APPWINDOW.0 as i32; // add taskbar presence
+            new_style &= !(WS_EX_TOOLWINDOW.0 as i32); // remove toolwindow flag
+            SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+            // Restore window (if minimized) and show.
+            ShowWindow(hwnd, SW_RESTORE);
+            ShowWindow(hwnd, SW_SHOW); // ensure visibility
+            SetForegroundWindow(hwnd);
+        }
+    }
+}

@@ -1,14 +1,8 @@
-use rdev::{listen, Event, EventType, Key};
-use std::sync::{Arc, Mutex};
-use std::collections::HashSet;
+use rdev::{listen, EventType, Key};
+
 use tokio::sync::mpsc::UnboundedSender;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 
-// Track which modifier keys are currently pressed
-thread_local! {
-    static MODIFIERS: Arc<Mutex<HashSet<Key>>> = Arc::new(Mutex::new(HashSet::new()));
-}
 
 // Simple enum to describe key events sent from the listener to the UI
 #[derive(Debug, Clone)]
@@ -74,13 +68,9 @@ pub fn listenforkey_send(
     eprintln!("  Previous: {} -> {:?}", previous_key_str, previous_key);
     
     // Create shared state for modifier keys
-    let ctrl_pressed = Arc::new(AtomicBool::new(false));
-    let shift_pressed = Arc::new(AtomicBool::new(false));
-    let alt_pressed = Arc::new(AtomicBool::new(false));
-    
-    let ctrl_clone = Arc::clone(&ctrl_pressed);
-    let shift_clone = Arc::clone(&shift_pressed);
-    let alt_clone = Arc::clone(&alt_pressed);
+    let mut ctrl_pressed = false;
+    let mut shift_pressed = false;
+    let mut alt_pressed = false;
     
     if let Err(error) = listen(move |event| {
         match event.event_type {
@@ -88,24 +78,24 @@ pub fn listenforkey_send(
                 // Track modifier key states
                 match key {
                     Key::ControlLeft | Key::ControlRight => {
-                        ctrl_clone.store(true, Ordering::Relaxed);
+                        ctrl_pressed = true;
                         return;
                     },
                     Key::ShiftLeft | Key::ShiftRight => {
-                        shift_clone.store(true, Ordering::Relaxed);
+                        shift_pressed = true;
                         return;
                     },
                     Key::Alt => {
-                        alt_clone.store(true, Ordering::Relaxed);
+                        alt_pressed = true;
                         return;
                     },
                     _ => {}
                 }
                 
                 // Get current modifier states
-                let has_ctrl = ctrl_pressed.load(Ordering::Relaxed);
-                let has_shift = shift_pressed.load(Ordering::Relaxed);
-                let has_alt = alt_pressed.load(Ordering::Relaxed);
+                let has_ctrl = ctrl_pressed;
+                let has_shift = shift_pressed;
+                let has_alt = alt_pressed;
                 
                 println!("Detected key: {:?} | Ctrl: {}, Shift: {}, Alt: {}", key, has_ctrl, has_shift, has_alt);
                 
@@ -146,13 +136,13 @@ pub fn listenforkey_send(
                 
                 match key {
                     Key::ControlLeft | Key::ControlRight => {
-                        ctrl_pressed.store(false, Ordering::Relaxed);
+                        ctrl_pressed = false;
                     },
                     Key::ShiftLeft | Key::ShiftRight => {
-                        shift_pressed.store(false, Ordering::Relaxed);
+                        shift_pressed = false;
                     },
                     Key::Alt => {
-                        alt_pressed.store(false, Ordering::Relaxed);
+                        alt_pressed = false;
                     },
                     _ => {}
                 }

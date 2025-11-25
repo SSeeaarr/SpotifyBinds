@@ -57,10 +57,20 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
         ..Default::default()
     };
 
+    let cache_path = if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            dir.join(".spotify_token_cache.json")
+        } else {
+            std::path::PathBuf::from(".spotify_token_cache.json")
+        }
+    } else {
+        std::path::PathBuf::from(".spotify_token_cache.json")
+    };
+
     let config = Config {
         token_cached: true,
         token_refreshing: true,
-        cache_path: std::path::PathBuf::from(".spotify_token_cache.json"),
+        cache_path,
         ..Default::default()
     };
 
@@ -186,11 +196,22 @@ impl SpotifyClient {
     }
 
     async fn play(&self, device_id: Option<&str>) -> ClientResult<()> {
-        if let Err(e) = self.spotify.resume_playback(device_id, None).await {
-            println!("Already playing! : {}", e);
+        // Try to resume existing playback first
+        if self.spotify.resume_playback(device_id, None).await.is_ok() {
             return Ok(());
         }
-        Ok(())
+        
+        // If that fails, try to resume on an available device
+        match self.get_available_device().await {
+            Ok(Some(dev_id)) => {
+                let _ = self.spotify.resume_playback(Some(&dev_id), None).await;
+                Ok(())
+            }
+            _ => {
+                println!("Could not start playback: no active device");
+                Ok(())
+            }
+        }
     }
 
     async fn toggle_playback(&self, device_id: Option<&str>) -> ClientResult<()> {
@@ -203,8 +224,15 @@ impl SpotifyClient {
                 self.spotify.resume_playback(device_id, None).await?;
             }
         } else {
-            println!("No active playback");
-            
+            // No active playback - try to start it on an available device
+            match self.get_available_device().await {
+                Ok(Some(dev_id)) => {
+                    let _ = self.spotify.resume_playback(Some(&dev_id), None).await;
+                }
+                _ => {
+                    println!("Could not start playback: no active device");
+                }
+            }
         }
 
         Ok(())
@@ -218,6 +246,11 @@ impl SpotifyClient {
     async fn previous_track(&self, device_id: Option<&str>) -> ClientResult<()> {
         self.spotify.previous_track(device_id.as_deref()).await?;
         Ok(())
+    }
+
+    async fn get_available_device(&self) -> ClientResult<Option<String>> {
+        let devices = self.spotify.device().await?;
+        Ok(devices.first().and_then(|d| d.id.clone()))
     }
 
     async fn song_info(&self, device_id: Option<&str>) -> ClientResult<()> {

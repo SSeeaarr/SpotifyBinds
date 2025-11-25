@@ -1,7 +1,8 @@
 [package]
-name = "rspotifytest"
+name = "SpotifyBinds"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 rspotify = { version = "0.15.1", features = ["cli", "env-file"] }
@@ -14,7 +15,11 @@ egui = "0.33.0"
 rdev = "0.5.3"
 egui-notify = "0.21.0"
 winreg = "0.10"
-windows = { version = "0.48", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.48", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_ProcessStatus"] }
 tray-icon = "0.21.2"
 image = "0.25.9"
+winres = "0.1.12"
+auto-launch = "0.5.0"
 
+[build-dependencies]
+winres = "0.1.12"
