@@ -57,10 +57,20 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
         ..Default::default()
     };
 
+    let cache_path = if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            dir.join(".spotify_token_cache.json")
+        } else {
+            std::path::PathBuf::from(".spotify_token_cache.json")
+        }
+    } else {
+        std::path::PathBuf::from(".spotify_token_cache.json")
+    };
+
     let config = Config {
         token_cached: true,
         token_refreshing: true,
-        cache_path: std::path::PathBuf::from(".spotify_token_cache.json"),
+        cache_path,
         ..Default::default()
     };
 

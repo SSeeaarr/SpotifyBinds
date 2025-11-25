@@ -1,4 +1,4 @@
-//#![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 use eframe::egui;
 
 use egui_notify::Toasts;
@@ -10,6 +10,7 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 use windows::core::PCWSTR;
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW};
 use windows::Win32::Foundation::{HWND, BOOL, LPARAM};
 use auto_launch::AutoLaunch;
 use std::env;
@@ -31,6 +32,7 @@ fn main() -> eframe::Result {
 
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]).with_visible(!start_bg_arg),
+        vsync: false, // Disable vsync to control framerate manually
         ..Default::default()
     };
     
@@ -109,7 +111,7 @@ fn main() -> eframe::Result {
                 let _ = autolaunch.disable();
             }
 
-            if app.settings.start_on_login || autolaunch.is_enabled().unwrap_or(false) {
+            if (app.settings.start_on_login || autolaunch.is_enabled().unwrap_or(false)) && app.spotifyinitialized {
                 app.alreadystarted = true;
                 if let Some(ref spotify) = app.spotify {
                             let spotify_clone = spotify.clone();
@@ -165,15 +167,8 @@ fn main() -> eframe::Result {
                     if let Ok(event) = menu_channel.recv() {
                         match event.id.0.as_str() {
                            "Show" => {
-                                let wide: Vec<u16> = OsStr::new("SpotifyBinds").encode_wide().chain(Some(0)).collect();
-                                unsafe {
-                                    let hwnd = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr()));
-                                    if hwnd.0 != 0 {
-                                        std::thread::sleep(Duration::from_millis(100));
-                                        ShowWindow(hwnd, SW_RESTORE);
-                                        SetForegroundWindow(hwnd);
-                                    }
-                                }
+                                // Use helper to restore styles & show window.
+                                restore_and_show_window("SpotifyBinds");
                             }
                             "Quit" => {
                                 std::process::exit(0);
@@ -220,6 +215,13 @@ fn main() -> eframe::Result {
 
     impl AppSettings {
         fn path() -> PathBuf {
+            // Use executable directory for persistence so autostart with a
+            // different working directory still finds the settings file.
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    return dir.join(".spotify_settings.json");
+                }
+            }
             PathBuf::from(".spotify_settings.json")
         }
 
@@ -290,11 +292,12 @@ fn main() -> eframe::Result {
 
             if ctx.input(|i| i.viewport().close_requested()) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                // Minimize AND remove from taskbar by adjusting extended window style.
+                minimize_and_hide_from_taskbar("SpotifyBinds");
             }
-            if self.settings.start_in_bg && !ctx.input(|i| i.viewport().focused.unwrap()){
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            if self.settings.start_in_bg && !self.alreadystarted && !ctx.input(|i| i.viewport().focused.unwrap()){
+                self.alreadystarted = true;
+                minimize_and_hide_from_taskbar("SpotifyBinds");
             }
             
 
@@ -564,6 +567,9 @@ fn main() -> eframe::Result {
                 });
 
             });
+            
+            // Always cap framerate to reduce CPU
+            ctx.request_repaint_after(Duration::from_millis(33)); // ~30 FPS
         }
     }
 
@@ -579,6 +585,7 @@ fn minimize_window_by_title(title: &str) {
         }
     });
 }
+
 
 #[cfg(windows)] //HUGE thanks to phoglund on github, this is the only thing that worked.
 pub unsafe fn force_window_wakeup() { //Do I know whats going on here? nope. I think its poking the window
@@ -616,4 +623,41 @@ pub unsafe fn force_window_wakeup() { //Do I know whats going on here? nope. I t
     }
 }
 
+// Minimize the window (stops wgpu rendering) and adjust extended styles so it
+// does not appear on the taskbar. This avoids the higher CPU cost seen when
+// only hiding the window with SW_HIDE while still rendering.
+fn minimize_and_hide_from_taskbar(title: &str) {
+    let wide: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
+    unsafe {
+        let hwnd = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr()));
+        if hwnd.0 != 0 {
+            // Minimize first – this reduces GPU usage.
+            ShowWindow(hwnd, SW_MINIMIZE);
+            // Modify extended window style: remove APPWINDOW, add TOOLWINDOW so it
+            // is not shown on the taskbar but can have a tray icon.
+            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let mut new_style = ex_style | WS_EX_TOOLWINDOW.0 as i32;
+            new_style &= !(WS_EX_APPWINDOW.0 as i32);
+            SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+        }
+    }
+}
 
+// Restore window: undo style change and bring window back (Show button)
+fn restore_and_show_window(title: &str) {
+    let wide: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
+    unsafe {
+        let hwnd = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr()));
+        if hwnd.0 != 0 {
+            // Restore extended style so it appears again on taskbar.
+            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let mut new_style = ex_style | WS_EX_APPWINDOW.0 as i32; // add taskbar presence
+            new_style &= !(WS_EX_TOOLWINDOW.0 as i32); // remove toolwindow flag
+            SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+            // Restore window (if minimized) and show.
+            ShowWindow(hwnd, SW_RESTORE);
+            ShowWindow(hwnd, SW_SHOW); // ensure visibility
+            SetForegroundWindow(hwnd);
+        }
+    }
+}
