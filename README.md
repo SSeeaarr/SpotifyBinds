@@ -12,7 +12,7 @@ what you are doing, allowing you to control the current playback on your device.
 
 ---
 # How to use
----
+
 *Disclaimer* This requires spotify premium. There is no way around that since SpotifyBinds utilizes the spotify developer API. 
 
 Create a spotify developer account at: https://developer.spotify.com/
