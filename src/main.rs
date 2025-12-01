@@ -10,12 +10,12 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 use windows::core::PCWSTR;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW};
 use windows::Win32::Foundation::{HWND, BOOL, LPARAM};
 use auto_launch::AutoLaunch;
 use std::env;
 
-include!("hotkeyreg.rs");
+mod hotkeyreg;
+use hotkeyreg::*;
 include!("iconhandler.rs");
 include!("spotifyfunctions.rs");
 
@@ -98,17 +98,17 @@ fn main() -> eframe::Result {
             let quoted_exe_path = format!("\"{}\"", exe_path);
 
             let mut args = Vec::new();
-            if start_minimized_arg {
+            if app.settings.start_minimized {
                 args.push("--minimized");
             }
-            if start_bg_arg {
+            if app.settings.start_in_bg {
                 args.push("--background");
             }
             let autolaunch = AutoLaunch::new("SpotifyBinds", &quoted_exe_path, &args);
+            // Force update registry by disabling first
+            let _ = autolaunch.disable();
             if app.settings.start_on_login{
                 let _ = autolaunch.enable();
-            } else {
-                let _ = autolaunch.disable();
             }
 
             if (app.settings.start_on_login || autolaunch.is_enabled().unwrap_or(false)) && app.spotifyinitialized {
@@ -402,6 +402,10 @@ fn main() -> eframe::Result {
                             });
 
                             (self.toasts.success("Started! Running in background."));
+
+                            if ui.button("Stop").clicked(){
+
+                            }
                         } else {
                             (self.toasts.info("Spotify client not initialized."));
                         }
@@ -411,6 +415,8 @@ fn main() -> eframe::Result {
                 ui.add_space(10.0);
                 ui.separator();
                 ui.add_space(10.0);
+
+                
 
                 ui.horizontal(|ui| {
                     // Settings toggles
@@ -437,6 +443,29 @@ fn main() -> eframe::Result {
                     if changed {
                         // persist settings
                         let _ = self.settings.save();
+
+                        // Update AutoLaunch registry
+                        if let Ok(exe_path) = std::env::current_exe() {
+                             let exe_path_str = exe_path.to_string_lossy().to_string();
+                             let quoted_exe_path = format!("\"{}\"", exe_path_str);
+                             
+                             let mut args = Vec::new();
+                             if self.settings.start_minimized {
+                                 args.push("--minimized");
+                             }
+                             if self.settings.start_in_bg {
+                                 args.push("--background");
+                             }
+                             
+                             let autolaunch = AutoLaunch::new("SpotifyBinds", &quoted_exe_path, &args);
+                             
+                             
+                             if self.settings.start_on_login {
+                                 let _ = autolaunch.enable();
+                             } else {
+                                let _ = autolaunch.disable();
+                             }
+                        }
                     }
                 });
 

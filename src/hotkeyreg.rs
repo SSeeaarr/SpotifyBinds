@@ -1,5 +1,5 @@
 use rdev::{listen, EventType, Key};
-
+use eframe::egui;
 use tokio::sync::mpsc::UnboundedSender;
 
 
@@ -14,7 +14,7 @@ pub enum KeyEvent {
     Previous,
 }
 
-fn capture_key_input(ctx: &egui::Context) -> Option<String> {
+pub fn capture_key_input(ctx: &egui::Context) -> Option<String> {
     
     for event in &ctx.input(|i| i.events.clone()) {
         if let egui::Event::Key { key, pressed: true, .. } = event {
