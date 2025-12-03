@@ -29,10 +29,9 @@ fn main() -> eframe::Result {
     let start_minimized_arg = std::env::args().any(|a| a == "--minimized");
     let start_bg_arg = std::env::args().any(|a| a == "--background");
     
-
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]).with_visible(!start_bg_arg),
-        vsync: false, // Disable vsync to control framerate manually
+        vsync: false,
         ..Default::default()
     };
     
@@ -52,9 +51,6 @@ fn main() -> eframe::Result {
 
     eframe::run_native("SpotifyBinds", options, Box::new(|_cc| {
             let mut app = Appinfo::default();
-
-            
-            
 
             // Load token data
             if let Ok(instance) = MyToken::from_json() {
@@ -82,14 +78,16 @@ fn main() -> eframe::Result {
             // load saved binds (if any) and populate UI fields
             if let Ok(b) = AppSettings::load() {
                 app.settings = b.clone();
-                if !b.toggle.is_empty() { app.toggleplayback = b.toggle.clone(); }
-                if !b.play.is_empty() { app.play = b.play.clone(); }
-                if !b.pause.is_empty() { app.pause = b.pause.clone(); }
-                if !b.next.is_empty() { app.next = b.next.clone(); }
-                if !b.previous.is_empty() { app.previous = b.previous.clone(); }
-                if !b.volup.is_empty() { app.volup = b.volup.clone(); }
-                if !b.voldown.is_empty() { app.voldown = b.voldown.clone(); }
-                if !b.mute.is_empty() { app.mute = b.mute.clone(); }
+                if !b.toggle.is_empty() { app.toggleplayback = b.toggle; }
+                if !b.play.is_empty() { app.play = b.play; }
+                if !b.pause.is_empty() { app.pause = b.pause; }
+                if !b.next.is_empty() { app.next = b.next; }
+                if !b.previous.is_empty() { app.previous = b.previous; }
+                if !b.volup.is_empty() { app.volup = b.volup; }
+                if !b.voldown.is_empty() { app.voldown = b.voldown; }
+                if !b.mute.is_empty() { app.mute = b.mute; }
+                if b.volstepup != 0 { app.volstepup = b.volstepup; }
+                if b.volstepdown != 0 { app.volstepdown = b.volstepdown; }
             }
 
             let exe_path = env::current_exe()
@@ -114,7 +112,7 @@ fn main() -> eframe::Result {
                 let _ = autolaunch.enable();
             }
 
-            if (app.settings.start_on_login || autolaunch.is_enabled().unwrap_or(false)) && app.spotifyinitialized {
+            if (app.settings.start_on_login || app.settings.start_in_bg || autolaunch.is_enabled().unwrap_or(false)) && app.spotifyinitialized {
                 app.alreadystarted = true;
                 if let Some(ref spotify) = app.spotify {
                             let spotify_clone = spotify.clone();
@@ -126,6 +124,8 @@ fn main() -> eframe::Result {
                             let volup_key = app.volup.clone();
                             let voldown_key = app.voldown.clone();
                             let mute_key = app.mute.clone();
+                            let incamt = app.volstepup;
+                            let decamt = app.volstepdown;
                             
 
                             // Create a tokio unbounded channel for the async spotify worker
@@ -157,8 +157,8 @@ fn main() -> eframe::Result {
                                         KeyEvent::Pause => { let _ = client.pause(None).await; }
                                         KeyEvent::Next => { let _ = client.next_track(None).await; }
                                         KeyEvent::Previous => { let _ = client.previous_track(None).await; }
-                                        KeyEvent::Volup => { let _ = client.volup(None, 5).await; }
-                                        KeyEvent::Voldown => { let _ = client.voldown(None, 5).await; }
+                                        KeyEvent::Volup => { let _ = client.volup(None, incamt).await; }
+                                        KeyEvent::Voldown => { let _ = client.voldown(None, decamt).await; }
                                         KeyEvent::Mute => { let _ = client.mute(None).await; }
                                     }
                                 }
@@ -228,6 +228,8 @@ fn main() -> eframe::Result {
         volup: String,
         voldown: String,
         mute: String,
+        volstepup: u32,
+        volstepdown: u32,
         
     }
 
@@ -280,11 +282,15 @@ fn main() -> eframe::Result {
         voldown: String,
         mute: String,
 
+        volstepup: u32,
+        volstepdown: u32,
+
         spotify: Option<AuthCodeSpotify>,
         settings: AppSettings,
         tray_icon: Option<TrayIcon>,
         spotifyinitialized: bool,
         alreadystarted: bool,
+        firstframe: bool,
     }
 
     impl Default for Appinfo {
@@ -305,11 +311,15 @@ fn main() -> eframe::Result {
                     voldown: "           ".to_owned(),
                     mute: "           ".to_owned(),
 
+                    volstepup: 0,
+                    volstepdown: 0,
+
                     spotify: None,
                     settings: AppSettings::default(),
                     tray_icon: None,
                     spotifyinitialized: false,
                     alreadystarted: false,
+                    firstframe: true,
                 }
         }
     }
@@ -319,13 +329,15 @@ fn main() -> eframe::Result {
     impl eframe::App for Appinfo {
         fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 
-            if ctx.input(|i| i.viewport().close_requested()) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            if self.firstframe && self.settings.start_in_bg {
+                self.firstframe = false;
                 // Minimize AND remove from taskbar by adjusting extended window style.
                 minimize_and_hide_from_taskbar("SpotifyBinds");
             }
-            if self.settings.start_in_bg && !self.alreadystarted && !ctx.input(|i| i.viewport().focused.unwrap()){
-                self.alreadystarted = true;
+
+            if ctx.input(|i| i.viewport().close_requested()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                // Minimize AND remove from taskbar by adjusting extended window style.
                 minimize_and_hide_from_taskbar("SpotifyBinds");
             }
             
@@ -387,9 +399,11 @@ fn main() -> eframe::Result {
                 
 
                 ui.horizontal(|ui|{
-                    
-                    if ui.button("Start").clicked() && self.alreadystarted == false {
-                        self.alreadystarted=true;
+                
+                    if self.alreadystarted {
+                        ui.add_enabled(false, egui::Button::new("Running..."));
+                    } else if ui.button("Start").clicked() {
+                        self.alreadystarted = true;
                         
                         // Move the spotify client into a background async worker so
                         // key events are handled even when the UI is minimized.
@@ -402,6 +416,8 @@ fn main() -> eframe::Result {
                             let volup_key = self.volup.clone();
                             let voldown_key = self.voldown.clone();
                             let mute_key = self.mute.clone();
+                            let incamt = self.volstepup;
+                            let decamt = self.volstepdown;
                             
 
                             // Create a tokio unbounded channel for the async spotify worker
@@ -429,8 +445,8 @@ fn main() -> eframe::Result {
                                         KeyEvent::Pause => { let _ = client.pause(None).await; }
                                         KeyEvent::Next => { let _ = client.next_track(None).await; }
                                         KeyEvent::Previous => { let _ = client.previous_track(None).await; }
-                                        KeyEvent::Volup => { let _ = client.volup(None, 5).await; }
-                                        KeyEvent::Voldown => { let _ = client.voldown(None, 5).await; }
+                                        KeyEvent::Volup => { let _ = client.volup(None, incamt).await; }
+                                        KeyEvent::Voldown => { let _ = client.voldown(None, decamt).await; }
                                         KeyEvent::Mute => { let _ = client.mute(None).await; }
                                     }
                                 }
@@ -504,6 +520,7 @@ fn main() -> eframe::Result {
                     }
                 });
 
+                ui.add_space(10.0);
 
                 ui.horizontal(|ui| {
                     ui.label("Toggle playback: ");
@@ -527,6 +544,12 @@ fn main() -> eframe::Result {
                             self.recording_target = Some(RecordingTarget::Toggle);
                             (self.toasts.info("Key recording..."));
                         }
+                    }
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.toggleplayback = "           ".to_owned();
+                        self.settings.toggle = "           ".to_owned();
+                        let _ = self.settings.save();
                     }
                 });
 
@@ -553,6 +576,12 @@ fn main() -> eframe::Result {
                             (self.toasts.info("Key recording..."));
                         }
                     }
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.next = "           ".to_owned();
+                        self.settings.next = "           ".to_owned();
+                        let _ = self.settings.save();
+                    }
                 });
 
                 ui.horizontal(|ui| {
@@ -577,6 +606,12 @@ fn main() -> eframe::Result {
                             self.recording_target = Some(RecordingTarget::Previous);
                             (self.toasts.info("Key recording..."));
                         }
+                    } 
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.previous = "           ".to_owned();
+                        self.settings.previous = "           ".to_owned();
+                        let _ = self.settings.save();
                     }
                 });
 
@@ -602,6 +637,12 @@ fn main() -> eframe::Result {
                             self.recording_target = Some(RecordingTarget::Play);
                             (self.toasts.info("Key recording..."));
                         }
+                    } 
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.play = "           ".to_owned();
+                        self.settings.play = "           ".to_owned();
+                        let _ = self.settings.save();
                     }
                 });
 
@@ -627,8 +668,18 @@ fn main() -> eframe::Result {
                             self.recording_target = Some(RecordingTarget::Pause);
                             (self.toasts.info("Key recording..."));
                         }
+                    } 
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.pause = "           ".to_owned();
+                        self.settings.pause = "           ".to_owned();
+                        let _ = self.settings.save();
                     }
                 });
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(10.0);
 
                 ui.horizontal(|ui| {
                     ui.label("Volume up: ");
@@ -652,6 +703,17 @@ fn main() -> eframe::Result {
                             self.recording_target = Some(RecordingTarget::Volup);
                             (self.toasts.info("Key recording..."));
                         }
+                    } 
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.volup = "           ".to_owned();
+                        self.settings.volup = "           ".to_owned();
+                        let _ = self.settings.save();
+                    }
+                    
+                    if ui.add(egui::Slider::new(&mut self.volstepup, 0..=100).text("Increase amount")).changed() {
+                        self.settings.volstepup = self.volstepup;
+                        let _ = self.settings.save();
                     }
                 });
 
@@ -677,7 +739,19 @@ fn main() -> eframe::Result {
                             self.recording_target = Some(RecordingTarget::Voldown);
                             (self.toasts.info("Key recording..."));
                         }
+                    } 
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.voldown = "           ".to_owned();
+                        self.settings.voldown = "           ".to_owned();
+                        let _ = self.settings.save();
                     }
+
+                    if ui.add(egui::Slider::new(&mut self.volstepdown, 0..=100).text("Decrease amount")).changed() {
+                        self.settings.volstepdown = self.volstepdown;
+                        let _ = self.settings.save();
+                    }
+                    
                 });
 
                 ui.horizontal(|ui| {
@@ -702,9 +776,18 @@ fn main() -> eframe::Result {
                             self.recording_target = Some(RecordingTarget::Mute);
                             (self.toasts.info("Key recording..."));
                         }
+                    } 
+                    ui.add_space(15.0);
+                    if ui.button("Clear").clicked() {
+                        self.mute = "           ".to_owned();
+                        self.settings.mute = "           ".to_owned();
+                        let _ = self.settings.save();
                     }
+
+                    
                 });
 
+                
             });
             
             

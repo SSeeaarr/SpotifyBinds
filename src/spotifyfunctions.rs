@@ -189,11 +189,7 @@ struct VolumeInfo {
     stored_volume: u32,
 }
 
-impl VolumeInfo {
-    fn get_stored_volume(&self) -> u32 {
-        self.stored_volume
-    }
-}
+
 
 
 struct SpotifyClient {
