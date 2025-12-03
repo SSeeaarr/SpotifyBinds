@@ -12,6 +12,9 @@ pub enum KeyEvent {
     Pause,
     Next,
     Previous,
+    Volup,
+    Voldown,
+    Mute,
 }
 
 pub fn capture_key_input(ctx: &egui::Context) -> Option<String> {
@@ -49,6 +52,9 @@ pub fn listenforkey_send(
     pause_key_str: String,
     next_key_str: String,
     previous_key_str: String,
+    volup_key_str: String,
+    voldown_key_str: String,
+    mute_key_str: String,
 ) {
     
     
@@ -58,6 +64,9 @@ pub fn listenforkey_send(
     let pause_key = str_to_key(&pause_key_str);
     let next_key = str_to_key(&next_key_str);
     let previous_key = str_to_key(&previous_key_str);
+    let volup_key = str_to_key(&volup_key_str);
+    let voldown_key = str_to_key(&voldown_key_str);
+    let mute_key = str_to_key(&mute_key_str);
 
     // Debug: print parsed binds
     eprintln!("[LISTENER] Parsed binds:");
@@ -66,6 +75,10 @@ pub fn listenforkey_send(
     eprintln!("  Pause: {} -> {:?}", pause_key_str, pause_key);
     eprintln!("  Next: {} -> {:?}", next_key_str, next_key);
     eprintln!("  Previous: {} -> {:?}", previous_key_str, previous_key);
+    eprintln!("  VolUp: {} -> {:?}", volup_key_str, volup_key);
+    eprintln!("  VolDown: {} -> {:?}", voldown_key_str, voldown_key);
+    eprintln!("  Mute: {} -> {:?}", mute_key_str, mute_key);
+
     
     // Create shared state for modifier keys
     let mut ctrl_pressed = false;
@@ -129,6 +142,24 @@ pub fn listenforkey_send(
                     if key == pk && has_ctrl == previous_key_str.contains("Ctrl") && 
                        has_shift == previous_key_str.contains("Shift") && has_alt == previous_key_str.contains("Alt") {
                         let _ = tx.send(KeyEvent::Previous);
+                    }
+                }
+                if let Some(vu) = volup_key {
+                    if key == vu && has_ctrl == volup_key_str.contains("Ctrl") && 
+                       has_shift == volup_key_str.contains("Shift") && has_alt == volup_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Volup);
+                    }
+                }
+                if let Some(vd) = voldown_key {
+                    if key == vd && has_ctrl == voldown_key_str.contains("Ctrl") && 
+                       has_shift == voldown_key_str.contains("Shift") && has_alt == voldown_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Voldown);
+                    }
+                }
+                if let Some(mk) = mute_key {
+                    if key == mk && has_ctrl == mute_key_str.contains("Ctrl") && 
+                       has_shift == mute_key_str.contains("Shift") && has_alt == mute_key_str.contains("Alt") {
+                        let _ = tx.send(KeyEvent::Mute);
                     }
                 }
             },
@@ -218,6 +249,12 @@ pub fn str_to_key(s: &str) -> Option<Key> {
         "FN" => Some(Key::Function),
         "SCROLLLOCk" => Some(Key::ScrollLock),
         "PRINTSCREEN" => Some(Key::PrintScreen),
+        "EQUALS" => Some(Key::Equal),
+        "MINUS" => Some(Key::Minus),
+        "COMMA" => Some(Key::Comma),
+        "SLASH" => Some(Key::Slash),
+        "LEFTBRACKET" => Some(Key::LeftBracket),
+        "RIGHTBRACKET" => Some(Key::RightBracket),
 
 
         "F1" => Some(Key::F1),

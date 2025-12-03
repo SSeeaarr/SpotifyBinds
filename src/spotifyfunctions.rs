@@ -83,6 +83,7 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
 
     spotify.prompt_for_token(&url).await.ok()?;
 
+
     Some(spotify)
 
     // Running the requests
@@ -182,8 +183,22 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
     */
 }
 
+
+
+struct VolumeInfo {
+    stored_volume: u32,
+}
+
+impl VolumeInfo {
+    fn get_stored_volume(&self) -> u32 {
+        self.stored_volume
+    }
+}
+
+
 struct SpotifyClient {
     spotify: AuthCodeSpotify,
+    //volcontext: VolumeInfo,
 }
 
 impl SpotifyClient {
@@ -195,7 +210,7 @@ impl SpotifyClient {
         Ok(())
     }
 
-    async fn get_volume(&self, device_id: Option<&str>) -> ClientResult<Option<u32>> {
+    async fn get_volume(&self, _device_id: Option<&str>) -> ClientResult<Option<u32>> {
         let playback = self.spotify.current_playback(None, None::<Vec<_>>).await?;
         if let Some(pb) = playback {
             if let Some(volume) = pb.device.volume_percent {
@@ -205,8 +220,19 @@ impl SpotifyClient {
         Ok(None)
     }
 
-    async fn mute(&self, device_id: Option<&str>) -> ClientResult<()> { //this doesnt work
-        self.spotify.volume(0, device_id).await?;
+    async fn mute(&self, device_id: Option<&str>) -> ClientResult<()> { //doesnt work
+        let vol = VolumeInfo {
+            stored_volume: self.get_volume(device_id).await?.unwrap(),
+        };
+
+        let currentvol = self.get_volume(device_id).await?;
+
+        if currentvol == Some(0) {
+            self.spotify.volume(vol.stored_volume as u8, device_id).await?;
+            return Ok(());
+        } else {
+            self.spotify.volume(0, device_id).await?;
+        }
         Ok(())
     }
 

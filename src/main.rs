@@ -87,6 +87,9 @@ fn main() -> eframe::Result {
                 if !b.pause.is_empty() { app.pause = b.pause.clone(); }
                 if !b.next.is_empty() { app.next = b.next.clone(); }
                 if !b.previous.is_empty() { app.previous = b.previous.clone(); }
+                if !b.volup.is_empty() { app.volup = b.volup.clone(); }
+                if !b.voldown.is_empty() { app.voldown = b.voldown.clone(); }
+                if !b.mute.is_empty() { app.mute = b.mute.clone(); }
             }
 
             let exe_path = env::current_exe()
@@ -120,6 +123,9 @@ fn main() -> eframe::Result {
                             let pause_key = app.pause.clone();
                             let next_key = app.next.clone();
                             let previous_key = app.previous.clone();
+                            let volup_key = app.volup.clone();
+                            let voldown_key = app.voldown.clone();
+                            let mute_key = app.mute.clone();
                             
 
                             // Create a tokio unbounded channel for the async spotify worker
@@ -132,9 +138,13 @@ fn main() -> eframe::Result {
                             let pause = pause_key.clone();
                             let next = next_key.clone();
                             let previous = previous_key.clone();
+                            let volup = volup_key.clone();
+                            let voldown = voldown_key.clone();
+                            let mute = mute_key.clone();
+                            
                             let tx_clone = tx_tokio.clone();
                             std::thread::spawn(move || {
-                                listenforkey_send(tx_clone, toggle, play, pause, next, previous);
+                                listenforkey_send(tx_clone, toggle, play, pause, next, previous, volup, voldown, mute);
                             });
 
                             // Spawn the spotify worker on the tokio runtime. It owns the AuthCodeSpotify.
@@ -147,6 +157,9 @@ fn main() -> eframe::Result {
                                         KeyEvent::Pause => { let _ = client.pause(None).await; }
                                         KeyEvent::Next => { let _ = client.next_track(None).await; }
                                         KeyEvent::Previous => { let _ = client.previous_track(None).await; }
+                                        KeyEvent::Volup => { let _ = client.volup(None, 5).await; }
+                                        KeyEvent::Voldown => { let _ = client.voldown(None, 5).await; }
+                                        KeyEvent::Mute => { let _ = client.mute(None).await; }
                                     }
                                 }
                             });
@@ -197,6 +210,9 @@ fn main() -> eframe::Result {
         Previous,
         Play,
         Pause,
+        Volup,
+        Voldown,
+        Mute,
     }
 
     #[derive(Serialize, Deserialize, Default, Clone)]
@@ -209,6 +225,9 @@ fn main() -> eframe::Result {
         pause: String,
         next: String,
         previous: String,
+        volup: String,
+        voldown: String,
+        mute: String,
         
     }
 
@@ -251,11 +270,16 @@ fn main() -> eframe::Result {
         clientId: String,
         clientSecret: String,
         redirectUri: String,
+
         toggleplayback: String,
         play: String,
         pause: String,
         next: String,
         previous: String,
+        volup: String,
+        voldown: String,
+        mute: String,
+
         spotify: Option<AuthCodeSpotify>,
         settings: AppSettings,
         tray_icon: Option<TrayIcon>,
@@ -271,11 +295,16 @@ fn main() -> eframe::Result {
                     clientId: "".to_owned(),
                     clientSecret: "".to_owned(),
                     redirectUri: "".to_owned(),
+
                     toggleplayback: "           ".to_owned(),
                     play: "           ".to_owned(),
                     pause: "           ".to_owned(),
                     next: "           ".to_owned(),
                     previous: "           ".to_owned(),
+                    volup: "           ".to_owned(),
+                    voldown: "           ".to_owned(),
+                    mute: "           ".to_owned(),
+
                     spotify: None,
                     settings: AppSettings::default(),
                     tray_icon: None,
@@ -370,6 +399,9 @@ fn main() -> eframe::Result {
                             let pause_key = self.pause.clone();
                             let next_key = self.next.clone();
                             let previous_key = self.previous.clone();
+                            let volup_key = self.volup.clone();
+                            let voldown_key = self.voldown.clone();
+                            let mute_key = self.mute.clone();
                             
 
                             // Create a tokio unbounded channel for the async spotify worker
@@ -384,7 +416,7 @@ fn main() -> eframe::Result {
                             let previous = previous_key.clone();
                             let tx_clone = tx_tokio.clone();
                             std::thread::spawn(move || {
-                                listenforkey_send(tx_clone, toggle, play, pause, next, previous);
+                                listenforkey_send(tx_clone, toggle, play, pause, next, previous, volup_key, voldown_key, mute_key);
                             });
 
                             // Spawn the spotify worker on the tokio runtime. It owns the AuthCodeSpotify.
@@ -397,6 +429,9 @@ fn main() -> eframe::Result {
                                         KeyEvent::Pause => { let _ = client.pause(None).await; }
                                         KeyEvent::Next => { let _ = client.next_track(None).await; }
                                         KeyEvent::Previous => { let _ = client.previous_track(None).await; }
+                                        KeyEvent::Volup => { let _ = client.volup(None, 5).await; }
+                                        KeyEvent::Voldown => { let _ = client.voldown(None, 5).await; }
+                                        KeyEvent::Mute => { let _ = client.mute(None).await; }
                                     }
                                 }
                             });
@@ -595,10 +630,85 @@ fn main() -> eframe::Result {
                     }
                 });
 
+                ui.horizontal(|ui| {
+                    ui.label("Volume up: ");
+                    
+                    if self.recording_target == Some(RecordingTarget::Volup) {
+                        ui.label("Press a key or key combination...");
+
+                        if let Some(key_combo) = capture_key_input(ctx) {
+                            self.volup = key_combo.clone();
+                            self.settings.volup = key_combo;
+                            let _ = self.settings.save();
+                            self.recording_target = None;
+                        }
+
+                        if ui.button("Cancel").clicked() {
+                            self.recording_target = None;
+                        }
+                    } else {
+                        if ui.button(&self.volup).clicked() {
+                            println!("Recording key...");
+                            self.recording_target = Some(RecordingTarget::Volup);
+                            (self.toasts.info("Key recording..."));
+                        }
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Volume down: ");
+                    
+                    if self.recording_target == Some(RecordingTarget::Voldown) {
+                        ui.label("Press a key or key combination...");
+
+                        if let Some(key_combo) = capture_key_input(ctx) {
+                            self.voldown = key_combo.clone();
+                            self.settings.voldown = key_combo;
+                            let _ = self.settings.save();
+                            self.recording_target = None;
+                        }
+
+                        if ui.button("Cancel").clicked() {
+                            self.recording_target = None;
+                        }
+                    } else {
+                        if ui.button(&self.voldown).clicked() {
+                            println!("Recording key...");
+                            self.recording_target = Some(RecordingTarget::Voldown);
+                            (self.toasts.info("Key recording..."));
+                        }
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Mute: ");
+                    
+                    if self.recording_target == Some(RecordingTarget::Mute) {
+                        ui.label("Press a key or key combination...");
+
+                        if let Some(key_combo) = capture_key_input(ctx) {
+                            self.mute = key_combo.clone();
+                            self.settings.mute = key_combo;
+                            let _ = self.settings.save();
+                            self.recording_target = None;
+                        }
+
+                        if ui.button("Cancel").clicked() {
+                            self.recording_target = None;
+                        }
+                    } else {
+                        if ui.button(&self.mute).clicked() {
+                            println!("Recording key...");
+                            self.recording_target = Some(RecordingTarget::Mute);
+                            (self.toasts.info("Key recording..."));
+                        }
+                    }
+                });
+
             });
             
-            // Always cap framerate to reduce CPU
-            ctx.request_repaint_after(Duration::from_millis(33)); // ~30 FPS
+            
+            //ctx.request_repaint_after(Duration::from_millis(33)); // ~30 FPS
         }
     }
 
