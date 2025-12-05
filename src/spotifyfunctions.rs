@@ -1,11 +1,11 @@
-use egui::{Context, Ui};
+
 use rspotify::{
-    AuthCodeSpotify, ClientError, ClientResult, Config, Credentials, OAuth,
-    model::{AdditionalType, Country, FullTrack, Market, PlayableItem, track},
+    AuthCodeSpotify, ClientResult, Config, Credentials, OAuth,
+    model::{AdditionalType, Country, Market, PlayableItem},
     prelude::*,
     scopes,
 };
-use std::io;
+
 
 
 include!("savetoken.rs");
@@ -82,6 +82,7 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
     // This function requires the `cli` feature enabled.
 
     spotify.prompt_for_token(&url).await.ok()?;
+
 
     Some(spotify)
 
@@ -182,8 +183,18 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
     */
 }
 
+
+
+struct VolumeInfo {
+    stored_volume: u32,
+}
+
+
+
+
 struct SpotifyClient {
     spotify: AuthCodeSpotify,
+    //volcontext: VolumeInfo,
 }
 
 impl SpotifyClient {
@@ -192,6 +203,60 @@ impl SpotifyClient {
             println!("Already paused! : {}", e);
             return Ok(());
         }
+        Ok(())
+    }
+
+    async fn get_volume(&self, _device_id: Option<&str>) -> ClientResult<Option<u32>> {
+        let playback = self.spotify.current_playback(None, None::<Vec<_>>).await?;
+        if let Some(pb) = playback {
+            if let Some(volume) = pb.device.volume_percent {
+                return Ok(Some(volume));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn mute(&self, device_id: Option<&str>) -> ClientResult<()> { //doesnt work
+        let vol = VolumeInfo {
+            stored_volume: self.get_volume(device_id).await?.unwrap(),
+        };
+
+        let currentvol = self.get_volume(device_id).await?;
+
+        if currentvol == Some(0) {
+            self.spotify.volume(vol.stored_volume as u8, device_id).await?;
+            return Ok(());
+        } else {
+            self.spotify.volume(0, device_id).await?;
+        }
+        Ok(())
+    }
+
+    async fn volup(&self, device_id: Option<&str>, incamt: u32) -> ClientResult<()> {
+        let currentvol = match self.get_volume(device_id).await? {
+            Some(vol) => vol,
+            None => {
+                println!("Could not get current volume");
+                return Ok(());
+            }
+        };
+
+        let new_vol = currentvol.saturating_add(incamt).min(100);
+        self.spotify.volume(new_vol as u8, device_id).await?;
+        Ok(())
+    }
+
+    async fn voldown(&self, device_id: Option<&str>, decamt: u32) -> ClientResult<()> {
+        let currentvol = match self.get_volume(device_id).await? {
+            Some(vol) => vol,
+            None => {
+                println!("Could not get current volume");
+                return Ok(());
+            }
+        };
+
+        let new_vol = currentvol.saturating_sub(decamt);
+        self.spotify.volume(new_vol as u8, device_id).await?;
         Ok(())
     }
 
