@@ -1,11 +1,11 @@
-use egui::{Context, Ui};
+
 use rspotify::{
-    AuthCodeSpotify, ClientError, ClientResult, Config, Credentials, OAuth,
-    model::{AdditionalType, Country, FullTrack, Market, PlayableItem, device, track},
+    AuthCodeSpotify, ClientResult, Config, Credentials, OAuth,
+    model::{AdditionalType, Country, Market, PlayableItem},
     prelude::*,
     scopes,
 };
-use std::io;
+
 
 
 include!("savetoken.rs");

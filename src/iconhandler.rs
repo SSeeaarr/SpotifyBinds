@@ -35,3 +35,19 @@ pub fn load_icon(bytes: &[u8]) -> Icon {
     };
     Icon::from_rgba(icon_rgba, icon_width, icon_height).expect("Failed to create icon")
 }
+
+pub fn load_eframe_icon(bytes: &[u8]) -> egui::IconData {
+    let (icon_rgba, icon_width, icon_height) = {
+        let image = image::load_from_memory(bytes)
+            .expect("Failed to open icon")
+            .into_rgba8();
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        (rgba, width, height)
+    };
+    egui::IconData {
+        rgba: icon_rgba,
+        width: icon_width,
+        height: icon_height,
+    }
+}

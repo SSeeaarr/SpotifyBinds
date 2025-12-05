@@ -255,6 +255,10 @@ pub fn str_to_key(s: &str) -> Option<Key> {
         "SLASH" => Some(Key::Slash),
         "LEFTBRACKET" => Some(Key::LeftBracket),
         "RIGHTBRACKET" => Some(Key::RightBracket),
+        "LEFTARROW" => Some(Key::LeftArrow),
+        "RIGHTARROW" => Some(Key::RightArrow),
+        "UPARROW" => Some(Key::UpArrow),
+        "DOWNARROW" => Some(Key::DownArrow),
 
 
         "F1" => Some(Key::F1),
@@ -274,7 +278,7 @@ pub fn str_to_key(s: &str) -> Option<Key> {
     }
 }
 
-
+/* 
 pub fn key_to_str(key: &Key) -> &'static str {
     match *key {
         Key::KeyA => "A",
@@ -334,3 +338,4 @@ pub fn key_to_str(key: &Key) -> &'static str {
         _ => "Unknown",
     }
 }
+    */

@@ -4,8 +4,6 @@ use eframe::egui;
 use egui_notify::Toasts;
 use std::time::Duration;
 use std::os::windows::ffi::OsStrExt;
-use winreg::RegKey;
-use winreg::enums::*;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use windows::core::PCWSTR;
@@ -29,9 +27,14 @@ fn main() -> eframe::Result {
     let start_minimized_arg = std::env::args().any(|a| a == "--minimized");
     let start_bg_arg = std::env::args().any(|a| a == "--background");
     
+    let icon_data = load_eframe_icon(include_bytes!("mash.png"));
+
     let mut options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 480.0]).with_visible(!start_bg_arg),
-        vsync: false,
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([720.0, 480.0])
+            .with_visible(!start_bg_arg)
+            .with_icon(icon_data),
+        vsync: true,
         ..Default::default()
     };
     
