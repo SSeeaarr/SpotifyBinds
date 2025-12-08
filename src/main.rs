@@ -376,8 +376,11 @@ fn main() -> eframe::Result {
                             RSPOTIFY_CLIENT_SECRET: self.clientSecret.clone(),
                             RSPOTIFY_REDIRECT_URI: self.redirectUri.clone(),
                         };
-                        instance.save_to_json().unwrap();
-                        (self.toasts.success("Saved!"));
+                        if let Err(e) = instance.save_to_json() {
+                            (self.toasts.error(format!("Failed to save: {}", e)));
+                        } else {
+                            (self.toasts.success("Saved!"));
+                        }
                     }
                 });
 
