@@ -33,6 +33,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([720.0, 480.0])
             .with_visible(!start_bg_arg)
+            .with_taskbar(start_bg_arg)
             .with_icon(icon_data),
         vsync: true,
         ..Default::default()
