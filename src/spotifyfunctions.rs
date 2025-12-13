@@ -36,6 +36,16 @@ async fn spotifyinit() -> Option<AuthCodeSpotify> {
         return None;
     }
 
+    if client_id.contains(char::is_whitespace) || client_secret.contains(char::is_whitespace) {
+        println!("Spotify credentials contain whitespace");
+        return None;
+    }
+
+    if client_id.len() != 32 || client_secret.len() != 32 {
+        println!("Spotify credentials have incorrect length");
+        return None;
+    }
+
     let creds = Credentials::new(&client_id, &client_secret);
 
     // Same for RSPOTIFY_REDIRECT_URI. You can also set it explictly:
