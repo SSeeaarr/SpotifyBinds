@@ -13,13 +13,13 @@ what you are doing, allowing you to control the current playback on your device.
 ---
 # How to use
 
-*Disclaimer* This requires spotify premium. There is no way around that since SpotifyBinds utilizes the spotify developer API. 
+*Disclaimer* - This requires spotify premium. There is no way around that since SpotifyBinds utilizes the spotify developer API. 
 
 Create a spotify developer account at: https://developer.spotify.com/
 Click "Create App" 
 Give it a name and description. Then give it a redirect URI. A common one is this one: http://127.0.0.1:8888/callback
 
-Now save. 
+Click save. 
 
 You are going to see a panel similar to this. Here, you can copy and paste your clientID and clientSecret into SpotifyBinds as well as the URI.
 
